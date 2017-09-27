@@ -2,18 +2,19 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"time"
 )
 
 func handleTick(s Server) {
 	http.HandleFunc("/tick", func(w http.ResponseWriter, r *http.Request) {
 		// Unmarshal and validate request
 		if r.Method != "POST" {
-			http.Error(w, "Must use POST to access /tick", http.StatusMethodNotAllowed)
+			http.Error(w, "must use POST to access /tick", http.StatusMethodNotAllowed)
 			return
 		}
+
 		d := json.NewDecoder(r.Body)
 		var req TickRequest
 		err := d.Decode(&req)
@@ -33,12 +34,13 @@ func handleTick(s Server) {
 }
 
 func handleGetIntervals(s Server) {
-	http.HandleFunc("/get-intervals", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/intervals", func(w http.ResponseWriter, r *http.Request) {
 		// Unmarshal and validate request
 		if r.Method != "GET" {
-			http.Error(w, "", http.StatusMethodNotAllowed)
+			http.Error(w, "must use GET to access /intervals", http.StatusMethodNotAllowed)
 			return
 		}
+
 		d := json.NewDecoder(r.Body)
 		var req GetIntervalsRequest
 		err := d.Decode(&req)
@@ -62,17 +64,35 @@ func handleGetIntervals(s Server) {
 	})
 }
 
-func main() {
-	s := NewServer()
+// Clock is an interface wrapping time.Now(), so that clocks can be injected
+// into the TimeTracker server for testing
+type Clock interface {
+	Now() time.Time
+}
+
+// SystemClock is the default implementation of the Clock API (in which Now()
+// returns time.Now())
+type SystemClock struct{}
+
+// Now is SystemClock's implementation of the Clock API (returns time.Now())
+func (s SystemClock) Now() time.Time {
+	return time.Now()
+}
+
+func startServing(c Clock) {
+	s := NewServer(c)
 	handleTick(s)
 	handleGetIntervals(s)
 
 	// Return to non-endpoint calls with 404
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(fmt.Sprintf("No resource available at %s", r.URL.Path)))
 	})
 
 	// Start serving requests
 	log.Fatal(http.ListenAndServe(":10101", nil))
+}
+
+func main() {
+	startServing(SystemClock{})
 }

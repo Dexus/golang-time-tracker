@@ -15,24 +15,24 @@ type tickDB map[string][]time.Time
 // save or some other task-related action has occurred
 type TickRequest struct {
 	// The labels for which we want to issue a tick
-	labels []string
+	Labels []string
 }
 
 // GetIntervalsRequest is the object sent to the /get-intervals endpoint.
 type GetIntervalsRequest struct {
 	// The label whose intervals we want to get
-	label string
+	Label string
 }
 
 // Interval represents a time interval in which the caller was working. Used in
 // GetIntervalsResponse.
 type Interval struct {
-	start, end time.Time
+	Start, End time.Time
 }
 
 // GetIntervalsResponse is the result of the GetIntervals calls
 type GetIntervalsResponse struct {
-	intervals []Interval
+	Intervals []Interval
 }
 
 // Server is the interface exported by the TrackingServer API
@@ -45,20 +45,22 @@ type Server interface {
 
 // server implements the Server interface (i.e. the TrackingServer API)
 type server struct {
-	db tickDB
+	db    tickDB
+	clock Clock
 }
 
 // NewServer returns an implementation of the TrackingServer api
-func NewServer() Server {
+func NewServer(c Clock) Server {
 	return &server{
-		db: make(tickDB),
+		db:    make(tickDB),
+		clock: c,
 	}
 }
 
 // Tick handles the /tick http endpoint
 func (s *server) Tick(req *TickRequest) error {
-	for _, l := range req.labels {
-		s.db[l] = append(s.db[l], time.Now())
+	for _, l := range req.Labels {
+		s.db[l] = append(s.db[l], s.clock.Now())
 	}
 	return nil
 }
@@ -66,14 +68,14 @@ func (s *server) Tick(req *TickRequest) error {
 func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, error) {
 	// Iterate through 'times' and break it up into intervals
 	intervals := []Interval{}
-	times := s.db[req.label]
+	times := s.db[req.Label]
 	iL, iR := 0, 0
 	for i := 1; i <= len(times); i++ {
 		if i == len(times) || times[i].Sub(times[iR]) > 23*time.Minute {
 			if iL < iR {
 				intervals = append(intervals, Interval{
-					start: times[iL],
-					end:   times[iR],
+					Start: times[iL],
+					End:   times[iR],
 				})
 			}
 			iL = i
@@ -81,5 +83,5 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		iR = i
 	}
 
-	return &GetIntervalsResponse{intervals: intervals}, nil
+	return &GetIntervalsResponse{Intervals: intervals}, nil
 }

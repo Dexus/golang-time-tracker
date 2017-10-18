@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"sync"
 	"time"
 )
 
@@ -30,6 +32,10 @@ type Interval struct {
 	Start, End time.Time
 }
 
+func (i Interval) String() string {
+	return fmt.Sprintf("[%s starting %s]", i.End.Sub(i.Start), i.Start)
+}
+
 // GetIntervalsResponse is the result of the GetIntervals calls
 type GetIntervalsResponse struct {
 	Intervals []Interval
@@ -39,13 +45,18 @@ type GetIntervalsResponse struct {
 type Server interface {
 	Tick(req *TickRequest) error
 	GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, error)
+	Clear()
 }
 
 // Implementation
 
 // server implements the Server interface (i.e. the TrackingServer API)
 type server struct {
-	db    tickDB
+	// Owned
+	mu sync.Mutex
+	db tickDB
+
+	// Not owned
 	clock Clock
 }
 
@@ -59,6 +70,8 @@ func NewServer(c Clock) Server {
 
 // Tick handles the /tick http endpoint
 func (s *server) Tick(req *TickRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, l := range req.Labels {
 		s.db[l] = append(s.db[l], s.clock.Now())
 	}
@@ -66,6 +79,8 @@ func (s *server) Tick(req *TickRequest) error {
 }
 
 func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	// Iterate through 'times' and break it up into intervals
 	intervals := []Interval{}
 	times := s.db[req.Label]
@@ -84,4 +99,10 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 	}
 
 	return &GetIntervalsResponse{Intervals: intervals}, nil
+}
+
+func (s *server) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.db = make(tickDB)
 }

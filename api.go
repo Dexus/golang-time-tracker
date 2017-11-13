@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 )
+
+// If this many minutes elapses between consecutive work ticks, then the gap
+// will "break" the previous work interval
+const maxEventGap = 23 * time.Minute
 
 // Data Structures
 
@@ -22,7 +27,12 @@ type TickRequest struct {
 
 // GetIntervalsRequest is the object sent to the /get-intervals endpoint.
 type GetIntervalsRequest struct {
-	// The label whose intervals we want to get
+	// The time period in which we want to get intervals. If an interval in the
+	// result overlaps with 'Start' or 'End', it will be truncated.
+	Start, End time.Time
+
+	// The label whose intervals we want to get. If the label is the empty string
+	// or unset, then get all intervals
 	Label string
 }
 
@@ -30,6 +40,7 @@ type GetIntervalsRequest struct {
 // GetIntervalsResponse.
 type Interval struct {
 	Start, End time.Time
+	Labels     []string
 }
 
 func (i Interval) String() string {
@@ -45,6 +56,7 @@ type GetIntervalsResponse struct {
 type Server interface {
 	Tick(req *TickRequest) error
 	GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, error)
+	GetToday(w http.ResponseWriter)
 	Clear()
 }
 
@@ -52,12 +64,12 @@ type Server interface {
 
 // server implements the Server interface (i.e. the TrackingServer API)
 type server struct {
-	// Owned
+	//// Not owned
+	clock Clock
+
+	//// Owned
 	mu sync.Mutex
 	db tickDB
-
-	// Not owned
-	clock Clock
 }
 
 // NewServer returns an implementation of the TrackingServer api
@@ -73,9 +85,25 @@ func (s *server) Tick(req *TickRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, l := range req.Labels {
+		fmt.Printf("time: %v\n", s.clock.Now())
 		s.db[l] = append(s.db[l], s.clock.Now())
+		s.db[""] = append(s.db[""], s.clock.Now())
 	}
 	return nil
+}
+
+func min(t1 time.Time, t2 time.Time) time.Time {
+	if t1.Before(t2) {
+		return t1
+	}
+	return t2
+}
+
+func max(t1 time.Time, t2 time.Time) time.Time {
+	if t1.After(t2) {
+		return t1
+	}
+	return t2
 }
 
 func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, error) {
@@ -84,21 +112,42 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 	// Iterate through 'times' and break it up into intervals
 	intervals := []Interval{}
 	times := s.db[req.Label]
-	iL, iR := 0, 0
-	for i := 1; i <= len(times); i++ {
-		if i == len(times) || times[i].Sub(times[iR]) > 23*time.Minute {
-			if iL < iR {
-				intervals = append(intervals, Interval{
-					Start: times[iL],
-					End:   times[iR],
-				})
-			}
-			iL = i
+	var iL int // left (lower) bound of interval - always starts at 0
+	for i := 1; i <= len(times) && times[iL].Before(req.End); i++ {
+		iR := i - 1 // potential right (upper) bound of interval
+		if i < len(times) &&
+			times[iR].Before(req.End) &&
+			times[i].Sub(times[iR]) <= maxEventGap {
+			continue // work interval still going -- move iR to the right
 		}
-		iR = i
-	}
 
+		// Interval break between i-1 (iR) and i
+		// Add prev interval to toAdd and advance iL to start a new interval
+		// (next iteration)
+		toAdd := Interval{
+			Start: max(times[iL], req.Start),
+			End:   min(times[iR], req.End),
+		}
+		iL = i
+		if toAdd.End.Sub(toAdd.Start) <= 0 {
+			continue // toAdd has duration of 0 (or req.End < toAdd.Start) -- skip
+		}
+		if times[iR].Before(req.Start) {
+			continue // toAdd doesn't overlap with request -- skip
+		}
+		intervals = append(intervals, toAdd)
+	}
 	return &GetIntervalsResponse{Intervals: intervals}, nil
+}
+
+// GetToday writes the http response for the /today page to 'w'.
+func (s *server) GetToday(w http.ResponseWriter) {
+	t := TodayOp{
+		server:  s,
+		writer:  w,
+		bgWidth: float64(500),
+	}
+	t.start()
 }
 
 func (s *server) Clear() {

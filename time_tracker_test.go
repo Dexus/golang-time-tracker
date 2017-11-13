@@ -67,19 +67,18 @@ func TestParsing(t *testing.T) {
 	start := time.Date(
 		/* date */ 2017, 7, 1,
 		/* time */ 12, 0, 0,
-		/* nsec, location */ 0, time.UTC)
+		/* nsec, location */ 0, time.Local)
 	testClock.Set(start)
 
 	// Make several calls to /tick via the HTTP API (simulating that they arrive
 	// several minutes apart, so that there are two distinct intervals here).
 	// Don't use TickAt, to test json parsing.
-	client := &http.Client{}
 	for _, i := range []int64{0, 1, 1, 30, 1} {
 		testClock.Add(time.Duration(i * int64(time.Minute)))
 		req, err := http.NewRequest("POST", "http://localhost:10101/tick",
-			strings.NewReader(`{ "labels": ["label1", "label2"]}`))
+			strings.NewReader(`{"labels":["label1", "label2"]}`))
 		Check(t, Nil(err))
-		resp, err := client.Do(req)
+		resp, err := http.DefaultClient.Do(req)
 		Check(t,
 			Nil(err),
 			Eq(resp.StatusCode, http.StatusOK),
@@ -90,17 +89,20 @@ func TestParsing(t *testing.T) {
 	// Make a call to /get-intervals and make sure the two expected intervals
 	// are returned
 	for _, label := range []string{"label1", "label2"} {
-		url := fmt.Sprintf("http://localhost:10101/intervals?label=%s", label)
+		morning := time.Date(2017, 7, 1, 0, 0, 0, 0, time.Local)
+		night := morning.Add(24 * time.Hour)
+		url := fmt.Sprintf("http://localhost:10101/intervals?label=%s&start=%d&end=%d",
+			label, morning.Unix(), night.Unix())
 		req, err := http.NewRequest("GET", url, nil)
 		Check(t, Nil(err))
-		resp, err := client.Do(req)
+		resp, err := http.DefaultClient.Do(req)
 		Check(t,
 			Nil(err),
 			Eq(resp.StatusCode, http.StatusOK),
 		)
 
-		decoder := json.NewDecoder(resp.Body)
 		var actual GetIntervalsResponse
+		decoder := json.NewDecoder(resp.Body)
 		decoder.Decode(&actual)
 		Check(t, Eq(actual, GetIntervalsResponse{
 			Intervals: []Interval{
@@ -110,6 +112,75 @@ func TestParsing(t *testing.T) {
 					End: start.Add(33 * time.Minute)},
 			},
 		}))
+	}
+}
+
+// TestGetIntervalsBoundary checks that GetIntervals only returns intervals
+// within the given time range
+func TestGetIntervalsBoundary(t *testing.T) {
+	ClearData(t)
+	start := time.Date(
+		/* date */ 2017, 7, 1,
+		/* time */ 6, 0, 0,
+		/* nsec, location */ 0, time.Local)
+	testClock.Set(start)
+
+	// tick every 20 minutes for 12 hours, so we have a single interval from 6am
+	// to 6pm
+	hours, ticksPerHour := 12, 3
+	TickAt(t, nil, 0)
+	for i := 0; i < ((hours * ticksPerHour) + 1); i++ {
+		TickAt(t, nil, 20)
+	}
+
+	// Enumerate test cases
+	name := []string{
+		"day-before",
+		"overlap-morning",
+		"full-day",
+		"overlap-evening",
+		"day-after",
+	}
+	reqStartTs := []time.Time{
+		time.Date(2017, 6, 30, 0, 0, 0, 0, time.Local),  // day before
+		time.Date(2017, 6, 30, 12, 0, 0, 0, time.Local), // overlap morning
+		time.Date(2017, 7, 1, 0, 0, 0, 0, time.Local),   // full day
+		time.Date(2017, 7, 1, 12, 0, 0, 0, time.Local),  // overlap evening
+		time.Date(2017, 7, 2, 0, 0, 0, 0, time.Local),   // day after
+	}
+	expected := [][]Interval{
+		// no overlap
+		{},
+		// end at noon (req end)
+		{{Start: start, End: start.Add(6 * time.Hour)}},
+		// full interval
+		{{Start: start, End: start.Add(12 * time.Hour)}},
+		// begin at noon (req start)
+		{{Start: start.Add(6 * time.Hour), End: start.Add(12 * time.Hour)}},
+		// no overlap
+		{},
+	}
+
+	// Make a call to /get-intervals and make sure the two expected intervals
+	// are returned
+	for i := 0; i < len(name); i++ {
+		t.Run(name[i], func(t *testing.T) {
+			reqStart, reqEnd := reqStartTs[i], reqStartTs[i].Add(24*time.Hour)
+			url := fmt.Sprintf("http://localhost:10101/intervals?start=%d&end=%d",
+				reqStart.Unix(), reqEnd.Unix())
+			req, err := http.NewRequest("GET", url, nil)
+			Check(t, Nil(err))
+			resp, err := http.DefaultClient.Do(req)
+			Check(t,
+				Nil(err),
+				Eq(resp.StatusCode, http.StatusOK),
+			)
+
+			var actual GetIntervalsResponse
+			decoder := json.NewDecoder(resp.Body)
+			decoder.Decode(&actual)
+			Check(t, Eq(actual, GetIntervalsResponse{Intervals: expected[i]}))
+		})
 	}
 }
 

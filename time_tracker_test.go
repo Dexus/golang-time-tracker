@@ -129,7 +129,7 @@ func TestGetIntervalsBoundary(t *testing.T) {
 	// to 6pm
 	hours, ticksPerHour := 12, 3
 	TickAt(t, nil, 0)
-	for i := 0; i < ((hours * ticksPerHour) + 1); i++ {
+	for i := 0; i < (hours * ticksPerHour); i++ {
 		TickAt(t, nil, 20)
 	}
 

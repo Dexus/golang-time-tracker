@@ -35,9 +35,11 @@ func (t *TodayOp) start() {
 // getIntervals generates 'div' structs indicating where "work" divs should be
 // placed (which indicate time when I was working)
 func (t *TodayOp) getIntervals() {
+	now := t.server.clock.Now()
+	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	result, err := t.server.GetIntervals(&GetIntervalsRequest{
-		// Start: <FILL IN>,
-		// End: <FILL IN>,
+		Start: morning,
+		End:   morning.Add(24 * time.Hour),
 		Label: "",
 	})
 	if err != nil {
@@ -52,9 +54,9 @@ func (t *TodayOp) computeDivs() {
 	now := t.server.clock.Now()
 	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	daySecs := (24 * time.Hour).Seconds()
-	divs := make([]div, 0, len(t.intervals))
+	t.divs = make([]div, 0, len(t.intervals))
 	for _, i := range t.intervals {
-		divs = append(divs, div{
+		t.divs = append(t.divs, div{
 			Left:  int((t.bgWidth * i.Start.Sub(morning).Seconds()) / daySecs),
 			Width: int((t.bgWidth * i.End.Sub(i.Start).Seconds()) / daySecs),
 		})

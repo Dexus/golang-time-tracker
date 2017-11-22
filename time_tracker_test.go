@@ -196,13 +196,14 @@ func TestToday(t *testing.T) {
 		/* time */ 9, 0, 0,
 		/* nsec, location */ 0, time.UTC)
 	testClock.Set(start)
-	TickAt(t, nil, 1, 1, 30, 1, 1)
+	TickAt(t, nil, 0, 20, 60, 20)
 
 	req, err := http.NewRequest("GET", "http://localhost:10101/today", nil)
 	Check(t, Nil(err))
 	resp, err := http.DefaultClient.Do(req)
 	buf := &bytes.Buffer{}
 	buf.ReadFrom(resp.Body)
+	t.Log(buf)
 	doc, err := html.Parse(buf)
 	Check(t, Nil(err))
 

@@ -21,7 +21,8 @@ func handleTick(s Server) {
 		var req TickRequest
 		d := json.NewDecoder(r.Body)
 		if err := d.Decode(&req); err != nil {
-			http.Error(w, "request did not match expected type", http.StatusBadRequest)
+			msg := fmt.Sprintf("request did not match expected type: %v", err)
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 
@@ -86,10 +87,12 @@ func handleClear(s Server) {
 			return
 		}
 
+		// Require a body to ensure that I can't accidentally clear from my browser
 		req := make(map[string]interface{})
 		d := json.NewDecoder(r.Body)
-		if err := d.Decode(req); err != nil {
-			http.Error(w, "request did not match expected type", http.StatusBadRequest)
+		if err := d.Decode(&req); err != nil {
+			msg := fmt.Sprintf("request did not match expected type: %v", err)
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 		if req["confirm"] != "yes" {
@@ -133,6 +136,7 @@ func startServing(c Clock) {
 	handleTick(s)
 	handleGetIntervals(s)
 	handleToday(s)
+	handleClear(s)
 
 	// Return to non-endpoint calls with 404
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

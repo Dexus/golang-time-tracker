@@ -56,8 +56,13 @@ func ClearData(t *testing.T) {
 	t.Helper()
 	req, err := http.NewRequest("POST", "http://localhost:10101/clear",
 		strings.NewReader(`{"confirm":"yes"}`))
-	_, err = http.DefaultClient.Do(req)
 	Check(t, Nil(err))
+	resp, err := http.DefaultClient.Do(req)
+	Check(t,
+		Nil(err),
+		Eq(ReadBody(t, resp), ""),
+		Eq(resp.StatusCode, http.StatusOK),
+	)
 }
 
 // TestParsing does a basic test of the TimeTracker API (registering 4 ticks

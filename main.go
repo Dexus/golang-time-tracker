@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -46,22 +48,28 @@ func handleGetIntervals(s Server) {
 		}
 
 		// Trasform GET params into request struct
-		st, err := strconv.ParseInt(r.URL.Query().Get("start"), 10, 64)
-		if err != nil {
-			msg := fmt.Sprintf("invalid \"start\" param: %s", err.Error())
-			http.Error(w, msg, http.StatusBadRequest)
-			return
+		var start, end int64 = 0, math.MaxInt64
+		var err error
+		if startStr := r.URL.Query().Get("start"); startStr != "" {
+			start, err = strconv.ParseInt(startStr, 10, 64)
+			if err != nil {
+				msg := fmt.Sprintf("invalid \"start\" param: %s", err.Error())
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			}
 		}
-		en, err := strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
-		if err != nil {
-			msg := fmt.Sprintf("invalid \"end\" param: %s", err.Error())
-			http.Error(w, msg, http.StatusBadRequest)
-			return
+		if endStr := r.URL.Query().Get("end"); endStr != "" {
+			end, err = strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
+			if err != nil {
+				msg := fmt.Sprintf("invalid \"end\" param: %s", err.Error())
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			}
 		}
 		req := GetIntervalsRequest{
 			Label: r.URL.Query().Get("label"),
-			Start: time.Unix(st, 0),
-			End:   time.Unix(en, 0),
+			Start: start,
+			End:   end,
 		}
 
 		// Process request
@@ -73,6 +81,7 @@ func handleGetIntervals(s Server) {
 		resultJSON, err := json.Marshal(result)
 		if err != nil {
 			http.Error(w, "could not serialize result: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.Write(resultJSON)
 	})
@@ -97,8 +106,12 @@ func handleClear(s Server) {
 		}
 		if req["confirm"] != "yes" {
 			http.Error(w, "Must send confirmation message to delete all server data", http.StatusBadRequest)
+			return
 		}
-		s.Clear()
+		if err := s.Clear(); err != nil {
+			http.Error(w, fmt.Sprintf("Could not clear DB: %v", err), http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -131,8 +144,12 @@ func (s SystemClock) Now() time.Time {
 	return time.Now()
 }
 
-func startServing(c Clock) {
-	s := NewServer(c)
+func startServing(c Clock, file string) {
+	s, err := NewServer(c, file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not start server: %v", err)
+		os.Exit(1)
+	}
 	handleTick(s)
 	handleGetIntervals(s)
 	handleToday(s)
@@ -148,5 +165,5 @@ func startServing(c Clock) {
 }
 
 func main() {
-	startServing(SystemClock{})
+	startServing(SystemClock{}, "" /* default db file */)
 }

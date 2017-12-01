@@ -38,8 +38,8 @@ func (t *TodayOp) getIntervals() {
 	now := t.server.clock.Now()
 	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	result, err := t.server.GetIntervals(&GetIntervalsRequest{
-		Start: morning,
-		End:   morning.Add(24 * time.Hour),
+		Start: morning.Unix(),
+		End:   morning.Add(24 * time.Hour).Unix(),
 		Label: "",
 	})
 	if err != nil {
@@ -51,14 +51,18 @@ func (t *TodayOp) getIntervals() {
 }
 
 func (t *TodayOp) computeDivs() {
-	now := t.server.clock.Now()
-	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	morning := func() int64 {
+		now := t.server.clock.Now()
+		m := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		return m.Unix()
+	}()
 	daySecs := (24 * time.Hour).Seconds()
 	t.divs = make([]div, 0, len(t.intervals))
 	for _, i := range t.intervals {
 		t.divs = append(t.divs, div{
-			Left:  int((t.bgWidth * i.Start.Sub(morning).Seconds()) / daySecs),
-			Width: int((t.bgWidth * i.End.Sub(i.Start).Seconds()) / daySecs),
+			Left:  int(t.bgWidth * float64(i.Start-morning) / daySecs),
+			Width: int(t.bgWidth * float64(i.End-i.Start) / daySecs),
 		})
 	}
 	t.generateTemplate()

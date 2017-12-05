@@ -15,7 +15,9 @@ type div struct {
 type TodayOp struct {
 	//// Not Owned
 	// The 'server' that handles incoming requests (parent struct; owns this)
-	server *server
+	server APIServer
+	// The clock used by 'server' for testing
+	clock Clock
 	// The http response writer that must receive the result of /today
 	writer http.ResponseWriter
 
@@ -35,7 +37,7 @@ func (t *TodayOp) start() {
 // getIntervals generates 'div' structs indicating where "work" divs should be
 // placed (which indicate time when I was working)
 func (t *TodayOp) getIntervals() {
-	now := t.server.clock.Now()
+	now := t.clock.Now()
 	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	result, err := t.server.GetIntervals(&GetIntervalsRequest{
 		Start: morning.Unix(),
@@ -51,9 +53,8 @@ func (t *TodayOp) getIntervals() {
 }
 
 func (t *TodayOp) computeDivs() {
-
 	morning := func() int64 {
-		now := t.server.clock.Now()
+		now := t.clock.Now()
 		m := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		return m.Unix()
 	}()
@@ -70,34 +71,14 @@ func (t *TodayOp) computeDivs() {
 
 func (t *TodayOp) generateTemplate() {
 	// Place generated divs into HTML template
-	err := template.Must(template.New("").Funcs(template.FuncMap{
+	data, err := Asset(`today.html.template`)
+	if err != nil {
+		http.Error(t.writer, "could not load today.html.template: "+err.Error(),
+			http.StatusInternalServerError)
+	}
+	err = template.Must(template.New("").Funcs(template.FuncMap{
 		"bgWidth": func() int { return int(t.bgWidth) },
-	}).Parse(`
-		<head>
-			<style type="text/css">
-				.timebg {
-					width: {{bgWidth}}pt;
-					height: 60pt;
-					top: 20pt;
-					margin: auto;
-					background-color: #d5d5d5;
-				}
-				.timefg {
-					height: 60pt;
-					background-color: #ffb915;
-					display: inline-block;
-				}
-			</style>
-		</head>
-		<body>
-		<div class="timebg">
-		{{range .}}
-			<div class="timefg" style="position: relative; left: {{.Left}}pt; width: {{.Width}}pt;">
-			</div>
-		{{end}}
-		</div>
-		</body>
-		`)).Execute(t.writer, t.divs)
+	}).Parse(string(data))).Execute(t.writer, t.divs)
 	if err != nil {
 		http.Error(t.writer, err.Error(), http.StatusInternalServerError)
 		return

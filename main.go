@@ -1,133 +1,18 @@
 package main
 
 import (
-	"encoding/json"
+	"bufio"
 	"fmt"
-	"log"
-	"math"
-	"net/http"
 	"os"
 	"strconv"
 	"time"
 )
 
-func handleTick(s Server) {
-	http.HandleFunc("/tick", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("handling /tick")
-		// Unmarshal and validate request
-		if r.Method != "POST" {
-			http.Error(w, "must use POST to access /tick", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var req TickRequest
-		d := json.NewDecoder(r.Body)
-		if err := d.Decode(&req); err != nil {
-			msg := fmt.Sprintf("request did not match expected type: %v", err)
-			http.Error(w, msg, http.StatusBadRequest)
-			return
-		}
-
-		// Process request
-		err := s.Tick(&req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-}
-
-func handleGetIntervals(s Server) {
-	http.HandleFunc("/intervals", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("handling /intervals")
-		// Unmarshal and validate request
-		if r.Method != "GET" {
-			http.Error(w, "must use GET to access /intervals", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Trasform GET params into request struct
-		var start, end int64 = 0, math.MaxInt64
-		var err error
-		if startStr := r.URL.Query().Get("start"); startStr != "" {
-			start, err = strconv.ParseInt(startStr, 10, 64)
-			if err != nil {
-				msg := fmt.Sprintf("invalid \"start\" param: %s", err.Error())
-				http.Error(w, msg, http.StatusBadRequest)
-				return
-			}
-		}
-		if endStr := r.URL.Query().Get("end"); endStr != "" {
-			end, err = strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
-			if err != nil {
-				msg := fmt.Sprintf("invalid \"end\" param: %s", err.Error())
-				http.Error(w, msg, http.StatusBadRequest)
-				return
-			}
-		}
-		req := GetIntervalsRequest{
-			Label: r.URL.Query().Get("label"),
-			Start: start,
-			End:   end,
-		}
-
-		// Process request
-		result, err := s.GetIntervals(&req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		resultJSON, err := json.Marshal(result)
-		if err != nil {
-			http.Error(w, "could not serialize result: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write(resultJSON)
-	})
-}
-
-func handleClear(s Server) {
-	http.HandleFunc("/clear", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("handling /clear")
-		// Unmarshal and validate request
-		if r.Method != "POST" {
-			http.Error(w, "must use POST to access /clear", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Require a body to ensure that I can't accidentally clear from my browser
-		req := make(map[string]interface{})
-		d := json.NewDecoder(r.Body)
-		if err := d.Decode(&req); err != nil {
-			msg := fmt.Sprintf("request did not match expected type: %v", err)
-			http.Error(w, msg, http.StatusBadRequest)
-			return
-		}
-		if req["confirm"] != "yes" {
-			http.Error(w, "Must send confirmation message to delete all server data", http.StatusBadRequest)
-			return
-		}
-		if err := s.Clear(); err != nil {
-			http.Error(w, fmt.Sprintf("Could not clear DB: %v", err), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-}
-
-func handleToday(s Server) {
-	http.HandleFunc("/today", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("handling /today")
-		// Unmarshal and validate request
-		if r.Method != "GET" {
-			http.Error(w, "must use GET to access /today", http.StatusMethodNotAllowed)
-			return
-		}
-		s.GetToday(w)
-		return
-	})
-}
+var (
+	/* const */ dataDir = os.Getenv("HOME") + "/.time-tracker"
+	/* const */ dbFile = dataDir + "/ticks.db"
+	/* const */ pidFile = dataDir + "/pid"
+)
 
 // Clock is an interface wrapping time.Now(), so that clocks can be injected
 // into the TimeTracker server for testing
@@ -145,23 +30,66 @@ func (s SystemClock) Now() time.Time {
 }
 
 func startServing(c Clock, file string) {
+	if file == "" {
+		if err := func() error {
+			// Create data dir if it doesn't exist
+			if _, err := os.Stat(dataDir); err == os.ErrNotExist {
+				if err := os.Mkdir(dataDir, 0644); err != nil {
+					return err
+				}
+			}
+			// Create a pid file to make sure we're not starting a redundant server (or
+			// error if one exists)
+			if f, err := os.OpenFile(pidFile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0544); err != os.ErrExist {
+				f.Write(append(strconv.AppendInt(nil, int64(os.Getpid()), 10), '\n'))
+				f.Close()
+				return nil // success: no other servers, start as usual
+			}
+			f, err := os.Open(pidFile)
+			if err != nil {
+				return fmt.Errorf("pid file exists at %s, however it can't be opened; "+
+					"refusing to start to avoid DB corruption", pidFile)
+			}
+			pid, port := "", ""
+			s := bufio.NewScanner(f)
+			if s.Scan() {
+				pid = s.Text()
+			}
+			if s.Scan() {
+				port = s.Text()
+			}
+			if _, err := os.Stat("/proc/" + pid); os.IsNotExist(err) {
+				// pidfile points at proc that has died. Delete pidfile and try again
+				os.Remove(pidFile)
+				startServing(c, file)
+				return nil // doesn't matter -- this never returns
+			}
+			// TODO this is awfully complicated -- am I ever going to use a non-default
+			// port?
+			switch {
+			case pid != "" && port != "":
+				return fmt.Errorf("time-tracker server already running at pid %s "+
+					"(port %s)", pid, port)
+			case pid != "":
+				return fmt.Errorf("time-tracker server already running at pid %s",
+					pid)
+			default:
+				return fmt.Errorf("pid file exists at %s, however it's empty (it "+
+					"may have content in a moment); refusing to start to avoid DB "+
+					"corruption", pidFile)
+
+			}
+		}(); err != nil {
+			fmt.Fprintf(os.Stderr, "Could not check for existing server: %v", err)
+			os.Exit(1)
+		}
+	}
 	s, err := NewServer(c, file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not start server: %v", err)
 		os.Exit(1)
 	}
-	handleTick(s)
-	handleGetIntervals(s)
-	handleToday(s)
-	handleClear(s)
-
-	// Return to non-endpoint calls with 404
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	// Start serving requests
-	log.Fatal(http.ListenAndServe(":10101", nil))
+	ServeOverHTTP(s, c)
 }
 
 func main() {

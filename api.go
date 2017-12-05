@@ -1,22 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"math"
-	"net/http"
-	"os"
-	"strconv"
 	"sync"
 	"time"
-)
-
-var (
-	/* const */ dataDir = os.Getenv("HOME") + "/.time-tracker"
-	/* const */ dbFile = dataDir + "/ticks.db"
-	/* const */ pidFile = dataDir + "/pid"
 )
 
 // -------------- API --------------
@@ -52,11 +42,10 @@ type GetIntervalsResponse struct {
 	Intervals []Interval
 }
 
-// Server is the interface exported by the TrackingServer API
-type Server interface {
+// APIServer is the interface exported by the TrackingServer API
+type APIServer interface {
 	Tick(req *TickRequest) error
 	GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, error)
-	GetToday(w http.ResponseWriter)
 	Clear() error
 }
 
@@ -72,56 +61,11 @@ type server struct {
 	// The sqlite driver does not allow for concurrent writes. See
 	// https://github.com/mattn/go-sqlite3#faq
 	// This allows for safe concurrent use of 'db'
-	mu sync.Mutex
+	mu sync.RWMutex
 }
 
 // NewServer returns an implementation of the TrackingServer api
-func NewServer(c Clock, file string) (Server, error) {
-	// Create data dir if it doesn't exist
-	if _, err := os.Stat(dataDir); err == os.ErrNotExist {
-		if err := os.Mkdir(dataDir, 0644); err != nil {
-			return nil, err
-		}
-	}
-	if file == "" {
-		// Create a pid file to make sure we're not starting a redundant server (or
-		// error if one exists)
-		if f, err := os.OpenFile(pidFile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0544); err != os.ErrExist {
-			f.Write(append(strconv.AppendInt(nil, int64(os.Getpid()), 10), '\n'))
-			f.Close()
-		} else {
-			f, err := os.Open(pidFile)
-			if err != nil {
-				return nil, fmt.Errorf("pid file exists at %s, however it can't be opened; "+
-					"refusing to start to avoid DB corruption", pidFile)
-			}
-			pid, port := "", ""
-			s := bufio.NewScanner(f)
-			if s.Scan() {
-				pid = s.Text()
-			}
-			if s.Scan() {
-				port = s.Text()
-			}
-			// TODO this is awfully complicated -- am I ever going to use a non-default
-			// port? Simplify...
-			switch {
-			case pid != "" && port != "":
-				return nil, fmt.Errorf("time-tracker server already running at pid %s "+
-					"(port %s)", pid, port)
-			case pid != "":
-				return nil, fmt.Errorf("time-tracker server already running at pid %s",
-					pid)
-			default:
-				return nil, fmt.Errorf("pid file exists at %s, however it's empty (it "+
-					"may have content in a moment); refusing to start to avoid DB "+
-					"corruption", pidFile)
-
-			}
-		}
-	} else {
-		dbFile = file // for testing. Normally dbFile is const
-	}
+func NewServer(c Clock, dbFile string) (APIServer, error) {
 	// Create DB connectin
 	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
@@ -160,8 +104,8 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 	var rows *sql.Rows
 	var err error
 	func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		s.mu.RLock()
+		defer s.mu.RUnlock()
 		// check maxEventGap before and after request, to handle the case where a time
 		// interval overlaps with the request interval
 		start := req.Start - maxEventGap
@@ -248,16 +192,6 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 	}
 
 	return &GetIntervalsResponse{Intervals: intervals}, nil
-}
-
-// GetToday writes the http response for the /today page to 'w'.
-func (s *server) GetToday(w http.ResponseWriter) {
-	t := TodayOp{
-		server:  s,
-		writer:  w,
-		bgWidth: float64(500),
-	}
-	t.start()
 }
 
 func (s *server) Clear() error {

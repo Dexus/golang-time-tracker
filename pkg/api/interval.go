@@ -7,6 +7,8 @@ package api
 import (
 	"fmt"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 func (i Interval) String() string {
@@ -33,16 +35,16 @@ type Collector struct {
 // Add adds a tick to 'c'. 's' is the time at which the tick occurred, as a Unix
 // timestamp (seconds since epoch)
 func (c *Collector) Add(t int64) bool {
-	fmt.Printf("Add(%s)", time.Unix(t, 0))
+	logline := fmt.Sprintf("Add(%s)", time.Unix(t, 0))
 	if c.start > c.r { // no overlap with [l, r]. Nothing to do
-		fmt.Println(" - no overlap")
+		logline += " - no overlap"
 		return false
 	} else if t-c.end <= maxEventGap { // Check for interval break
-		fmt.Println(" - still going")
+		logline += " - still going"
 		c.end = t // work interval still going: move 'end' to the right
 		return true
 	}
-	fmt.Println(" - interval break")
+	glog.Infof(logline)
 	c.addInterval()
 	c.start, c.end = t, t // start/end of next interval (end will advance)
 	return true
@@ -61,7 +63,7 @@ func (c *Collector) addInterval() {
 		End:   min(c.r, c.end),
 		Label: c.label,
 	}
-	fmt.Printf("%v [max(%s, %s), min(%s, %s)]\n", toAdd, time.Unix(c.l, 0), time.Unix(c.start, 0), time.Unix(c.r, 0), time.Unix(c.end, 0))
+	glog.Infof("%v [max(%s, %s), min(%s, %s)]\n", toAdd, time.Unix(c.l, 0), time.Unix(c.start, 0), time.Unix(c.r, 0), time.Unix(c.end, 0))
 	if toAdd.End <= toAdd.Start {
 		return // toAdd has duration of 0 (or req.End < toAdd.Start) -- skip
 	}

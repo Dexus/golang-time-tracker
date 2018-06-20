@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
 
+	"github.com/golang/glog"
 	"github.com/msteffen/golang-time-tracker/pkg/api"
 )
 
@@ -18,7 +18,7 @@ type httpAPIServer struct {
 }
 
 func (s httpAPIServer) tick(w http.ResponseWriter, r *http.Request) {
-	log.Printf("handling /tick")
+	glog.Infof("handling /tick")
 	// Unmarshal and validate request
 	if r.Method != "POST" {
 		http.Error(w, "must use POST to access /tick", http.StatusMethodNotAllowed)
@@ -43,7 +43,7 @@ func (s httpAPIServer) tick(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s httpAPIServer) getIntervals(w http.ResponseWriter, r *http.Request) {
-	log.Printf("handling /intervals")
+	glog.Infof("handling /intervals")
 	// Unmarshal and validate request
 	if r.Method != "GET" {
 		http.Error(w, "must use GET to access /intervals", http.StatusMethodNotAllowed)
@@ -90,7 +90,7 @@ func (s httpAPIServer) getIntervals(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s httpAPIServer) clear(w http.ResponseWriter, r *http.Request) {
-	log.Printf("handling /clear")
+	glog.Infof("handling /clear")
 	// Unmarshal and validate request
 	if r.Method != "POST" {
 		http.Error(w, "must use POST to access /clear", http.StatusMethodNotAllowed)
@@ -118,7 +118,7 @@ func (s httpAPIServer) clear(w http.ResponseWriter, r *http.Request) {
 
 // GetToday writes the http response for the /today page to 'w'.
 func (s httpAPIServer) today(w http.ResponseWriter, r *http.Request) {
-	log.Printf("handling /today")
+	glog.Infof("handling /today")
 	// Unmarshal and validate request
 	if r.Method != "GET" {
 		http.Error(w, "must use GET to access /today", http.StatusMethodNotAllowed)
@@ -152,5 +152,5 @@ func ServeOverHTTP(server api.APIServer, clock api.Clock) {
 	})
 
 	// Start serving requests
-	log.Fatal(http.ListenAndServe(":10101", nil))
+	glog.Fatal(http.ListenAndServe(":10101", nil))
 }

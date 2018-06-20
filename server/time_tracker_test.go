@@ -55,7 +55,7 @@ func TestParsing(t *testing.T) {
 
 		buf := &bytes.Buffer{}
 		buf.ReadFrom(resp.Body)
-		fmt.Printf("Response body:\n%s\n", buf.String())
+		t.Logf("Response body:\n%s\n", buf.String())
 
 		tu.Check(t,
 			tu.Nil(err),

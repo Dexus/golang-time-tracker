@@ -7,6 +7,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 // -------------- API --------------
@@ -132,7 +134,7 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		var escapedLabel string
 		var t int64
 		rows.Scan(&t, &escapedLabel)
-		fmt.Printf("%s, %s\n", time.Unix(t, 0), escapedLabel)
+		glog.Infof("%s, %s\n", time.Unix(t, 0), escapedLabel)
 		label := UnescapeLabel(escapedLabel)
 		if req.Label != "" && req.Label != label {
 			continue

@@ -2,12 +2,14 @@ package client
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/golang/glog"
 	"github.com/msteffen/golang-time-tracker/server"
 )
 
@@ -74,6 +76,7 @@ var statusCmd = cobra.Command{
 }
 
 func main() {
+	flag.Parse() // parse glog flags
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

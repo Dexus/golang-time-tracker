@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tu "github.com/msteffen/golang-time-tracker/pkg/testutil"
 )
 
 // TestDBFile is the DB file that time-tracker uses when run in tests
@@ -21,7 +23,7 @@ func SetUpTestServer() {
 	if _, err := os.Stat(TestDBFile); !os.IsNotExist(err) {
 		os.Remove(TestDBFile)
 	}
-	go startServing(testClock, TestDBFile)
+	go StartServing(testClock, TestDBFile)
 	// Wait until the server is up before proceeding
 	req, err := http.NewRequest("GET", "http://localhost:10101/", nil)
 	if err != nil {
@@ -42,7 +44,7 @@ func ReadBody(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	buf := &bytes.Buffer{}
 	_, err := buf.ReadFrom(resp.Body)
-	Check(t, Nil(err))
+	tu.Check(t, tu.Nil(err))
 	return buf.String()
 }
 
@@ -60,12 +62,12 @@ func TickAt(t *testing.T, label string, intervals ...int64) {
 		buf.Reset()
 		json.NewEncoder(&buf).Encode(request)
 		req, err := http.NewRequest("POST", "http://localhost:10101/tick", &buf)
-		Check(t, Nil(err))
+		tu.Check(t, tu.Nil(err))
 		resp, err := http.DefaultClient.Do(req)
-		Check(t,
-			Nil(err),
-			Eq(resp.StatusCode, http.StatusOK),
-			Eq(ReadBody(t, resp), ""),
+		tu.Check(t,
+			tu.Nil(err),
+			tu.Eq(resp.StatusCode, http.StatusOK),
+			tu.Eq(ReadBody(t, resp), ""),
 		)
 	}
 }
@@ -76,14 +78,14 @@ func ClearData(t *testing.T) {
 	t.Helper()
 	req, err := http.NewRequest("POST", "http://localhost:10101/clear",
 		strings.NewReader(`{"confirm":"yes"}`))
-	Check(t, Nil(err))
+	tu.Check(t, tu.Nil(err))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	Check(t,
-		Nil(err),
-		Eq(resp.StatusCode, http.StatusOK),
-		Eq(ReadBody(t, resp), ""),
+	tu.Check(t,
+		tu.Nil(err),
+		tu.Eq(resp.StatusCode, http.StatusOK),
+		tu.Eq(ReadBody(t, resp), ""),
 	)
 }

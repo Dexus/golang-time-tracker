@@ -2,15 +2,15 @@
 // way to encode sequences of strings as a single string. time-tracker happens
 // to use it to encode each tick's labels in single column in SQLite
 
-package main
+package label
 
 import (
 	"bytes"
 	"strings"
 )
 
-// escapeLabel escapes all instances of '"' and '\'
-func escapeLabel(label string) string {
+// EscapeLabel escapes all instances of '"' and '\'
+func EscapeLabel(label string) string {
 	buf := &bytes.Buffer{}
 	// Grow buf to hold the result
 	buf.Grow(len(label) +
@@ -30,8 +30,8 @@ func escapeLabel(label string) string {
 	return buf.String()
 }
 
-// unescapeLabel unescapes all instances of '"' and '\'
-func unescapeLabel(in string) string {
+// UnescapeLabel unescapes all instances of '"' and '\'
+func UnescapeLabel(in string) string {
 	out := &bytes.Buffer{}
 	escaped := false
 	for _, c := range in {

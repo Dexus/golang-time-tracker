@@ -7,6 +7,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/msteffen/golang-time-tracker/pkg/label"
 )
 
 // -------------- API --------------
@@ -94,7 +96,7 @@ func (s *server) Tick(req *TickRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(fmt.Sprintf(
-		"INSERT INTO ticks VALUES (%d, \"%s\")", s.clock.Now().Unix(), escapeLabel(req.Label),
+		"INSERT INTO ticks VALUES (%d, \"%s\")", s.clock.Now().Unix(), label.EscapeLabel(req.Label),
 	))
 	return err
 }
@@ -117,7 +119,7 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		} else {
 			rows, err = s.db.Query(fmt.Sprintf(
 				"SELECT * FROM ticks WHERE time BETWEEN %d AND %d AND labels LIKE \"%%%s%%\"",
-				start, end, escapeLabel(req.Label),
+				start, end, label.EscapeLabel(req.Label),
 			))
 		}
 	}()
@@ -133,7 +135,7 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		var t int64
 		rows.Scan(&t, &escapedLabel)
 		fmt.Printf("%s, %s\n", time.Unix(t, 0), escapedLabel)
-		label := unescapeLabel(escapedLabel)
+		label := label.UnescapeLabel(escapedLabel)
 		if req.Label != "" && req.Label != label {
 			continue
 		}

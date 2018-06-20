@@ -29,7 +29,7 @@ func (s SystemClock) Now() time.Time {
 	return time.Now()
 }
 
-func startServing(c Clock, file string) {
+func StartServing(c Clock, file string) {
 	if file == "" {
 		if err := func() error {
 			// Create data dir if it doesn't exist
@@ -61,7 +61,7 @@ func startServing(c Clock, file string) {
 			if _, err := os.Stat("/proc/" + pid); os.IsNotExist(err) {
 				// pidfile points at proc that has died. Delete pidfile and try again
 				os.Remove(pidFile)
-				startServing(c, file)
+				StartServing(c, file)
 				return nil // doesn't matter -- this never returns
 			}
 			// TODO this is awfully complicated -- am I ever going to use a non-default
@@ -93,5 +93,5 @@ func startServing(c Clock, file string) {
 }
 
 func main() {
-	startServing(SystemClock{}, "" /* default db file */)
+	StartServing(SystemClock{}, "" /* default db file */)
 }

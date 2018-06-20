@@ -9,12 +9,8 @@ import (
 	"strconv"
 )
 
-var s APIServer
 var c Clock
 
-// TODO some functions reference 's' above, others are methods of
-// 'httpAPIServer'. If I can pass e.g. h.Tick to http.HandleFunc, then that might
-// be a useful pattern
 type httpAPIServer struct {
 	APIServer
 }
@@ -44,7 +40,7 @@ func (s httpAPIServer) tick(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func getIntervals(w http.ResponseWriter, r *http.Request) {
+func (s httpAPIServer) getIntervals(w http.ResponseWriter, r *http.Request) {
 	log.Printf("handling /intervals")
 	// Unmarshal and validate request
 	if r.Method != "GET" {
@@ -91,7 +87,7 @@ func getIntervals(w http.ResponseWriter, r *http.Request) {
 	w.Write(resultJSON)
 }
 
-func clear(w http.ResponseWriter, r *http.Request) {
+func (s httpAPIServer) clear(w http.ResponseWriter, r *http.Request) {
 	log.Printf("handling /clear")
 	// Unmarshal and validate request
 	if r.Method != "POST" {
@@ -119,7 +115,7 @@ func clear(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetToday writes the http response for the /today page to 'w'.
-func today(w http.ResponseWriter, r *http.Request) {
+func (s httpAPIServer) today(w http.ResponseWriter, r *http.Request) {
 	log.Printf("handling /today")
 	// Unmarshal and validate request
 	if r.Method != "GET" {
@@ -127,7 +123,7 @@ func today(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t := TodayOp{
-		server:  s,
+		server:  s.APIServer,
 		clock:   c,
 		writer:  w,
 		bgWidth: float64(500),
@@ -139,15 +135,14 @@ func today(w http.ResponseWriter, r *http.Request) {
 // ServeOverHTTP serves the Server API over HTTP, managing HTTP
 // reqests/responses
 func ServeOverHTTP(server APIServer, clock Clock) {
-	s = server
 	c = clock
 	h := httpAPIServer{
 		APIServer: server,
 	}
 	http.HandleFunc("/tick", h.tick)
-	http.HandleFunc("/intervals", getIntervals)
-	http.HandleFunc("/today", today)
-	http.HandleFunc("/clear", clear)
+	http.HandleFunc("/intervals", h.getIntervals)
+	http.HandleFunc("/today", h.today)
+	http.HandleFunc("/clear", h.clear)
 
 	// Return to non-endpoint calls with 404
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

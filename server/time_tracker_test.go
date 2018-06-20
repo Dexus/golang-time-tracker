@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/net/html"
+
+	tu "github.com/msteffen/golang-time-tracker/pkg/testutil"
 )
 
 // TestParsing does a basic test of the TimeTracker API (registering 4 ticks
@@ -30,12 +32,12 @@ func TestParsing(t *testing.T) {
 		testClock.Add(time.Duration(i * int64(time.Minute)))
 		req, err := http.NewRequest("POST", "http://localhost:10101/tick",
 			strings.NewReader(`{"label":"label1"}`))
-		Check(t, Nil(err))
+		tu.Check(t, tu.Nil(err))
 		resp, err := http.DefaultClient.Do(req)
-		Check(t,
-			Nil(err),
-			Eq(ReadBody(t, resp), ""),
-			Eq(resp.StatusCode, http.StatusOK),
+		tu.Check(t,
+			tu.Nil(err),
+			tu.Eq(ReadBody(t, resp), ""),
+			tu.Eq(resp.StatusCode, http.StatusOK),
 		)
 	}
 
@@ -47,22 +49,22 @@ func TestParsing(t *testing.T) {
 		url := fmt.Sprintf("http://localhost:10101/intervals?label=%s&start=%d&end=%d",
 			label, morning.Unix(), night.Unix())
 		req, err := http.NewRequest("GET", url, nil)
-		Check(t, Nil(err))
+		tu.Check(t, tu.Nil(err))
 		resp, err := http.DefaultClient.Do(req)
 
 		buf := &bytes.Buffer{}
 		buf.ReadFrom(resp.Body)
 		fmt.Printf("Response body:\n%s\n", buf.String())
 
-		Check(t,
-			Nil(err),
-			Eq(resp.StatusCode, http.StatusOK),
+		tu.Check(t,
+			tu.Nil(err),
+			tu.Eq(resp.StatusCode, http.StatusOK),
 		)
 
 		var actual GetIntervalsResponse
 		decoder := json.NewDecoder(buf)
 		decoder.Decode(&actual)
-		Check(t, Eq(actual, GetIntervalsResponse{
+		tu.Check(t, tu.Eq(actual, GetIntervalsResponse{
 			Intervals: []Interval{
 				{
 					Start: ts.Unix(),
@@ -133,17 +135,17 @@ func TestGetIntervalsBoundary(t *testing.T) {
 			url := fmt.Sprintf("http://localhost:10101/intervals?start=%d&end=%d",
 				reqStart.Unix(), reqEnd.Unix())
 			req, err := http.NewRequest("GET", url, nil)
-			Check(t, Nil(err))
+			tu.Check(t, tu.Nil(err))
 			resp, err := http.DefaultClient.Do(req)
-			Check(t,
-				Nil(err),
-				Eq(resp.StatusCode, http.StatusOK),
+			tu.Check(t,
+				tu.Nil(err),
+				tu.Eq(resp.StatusCode, http.StatusOK),
 			)
 
 			var actual GetIntervalsResponse
 			decoder := json.NewDecoder(resp.Body)
 			decoder.Decode(&actual)
-			Check(t, Eq(actual, GetIntervalsResponse{Intervals: expected[i]}))
+			tu.Check(t, tu.Eq(actual, GetIntervalsResponse{Intervals: expected[i]}))
 		})
 	}
 }
@@ -158,13 +160,13 @@ func TestToday(t *testing.T) {
 	TickAt(t, "", 0, 20, 60, 20)
 
 	req, err := http.NewRequest("GET", "http://localhost:10101/today", nil)
-	Check(t, Nil(err))
+	tu.Check(t, tu.Nil(err))
 	resp, err := http.DefaultClient.Do(req)
 	buf := &bytes.Buffer{}
 	buf.ReadFrom(resp.Body)
 	t.Log(buf)
 	doc, err := html.Parse(buf)
-	Check(t, Nil(err))
+	tu.Check(t, tu.Nil(err))
 
 	// Look for the "timefg" elements in document, and make sure there are two of
 	// them in the right place
@@ -187,7 +189,7 @@ func TestToday(t *testing.T) {
 			}
 		}
 	}
-	Check(t, Eq(nIntervals, 2))
+	tu.Check(t, tu.Eq(nIntervals, 2))
 }
 
 func TestMain(m *testing.M) {

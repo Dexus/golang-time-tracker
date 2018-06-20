@@ -14,7 +14,8 @@ type div struct {
 // generating the /today page
 type TodayOp struct {
 	//// Not Owned
-	// The 'server' that handles incoming requests (parent struct; owns this)
+	// The 'server' that handles incoming requests (parent struct; owns this
+	// TodayOp)
 	server APIServer
 	// The clock used by 'server' for testing
 	clock Clock

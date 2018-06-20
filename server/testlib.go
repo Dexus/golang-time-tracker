@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/msteffen/golang-time-tracker/pkg/api"
 	tu "github.com/msteffen/golang-time-tracker/pkg/testutil"
 )
 
@@ -55,7 +56,7 @@ func ReadBody(t *testing.T, resp *http.Response) string {
 // past start, 2 minutes past start, and 3 minutes past start, logically)
 func TickAt(t *testing.T, label string, intervals ...int64) {
 	t.Helper()
-	request := TickRequest{Label: label}
+	request := api.TickRequest{Label: label}
 	var buf bytes.Buffer
 	for _, i := range intervals {
 		testClock.Add(time.Duration(i * int64(time.Minute)))

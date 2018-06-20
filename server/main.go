@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"time"
+
+	"github.com/msteffen/golang-time-tracker/pkg/api"
 )
 
 var (
@@ -14,22 +15,7 @@ var (
 	/* const */ pidFile = dataDir + "/pid"
 )
 
-// Clock is an interface wrapping time.Now(), so that clocks can be injected
-// into the TimeTracker server for testing
-type Clock interface {
-	Now() time.Time
-}
-
-// SystemClock is the default implementation of the Clock API (in which Now()
-// returns time.Now())
-type SystemClock struct{}
-
-// Now is SystemClock's implementation of the Clock API (returns time.Now())
-func (s SystemClock) Now() time.Time {
-	return time.Now()
-}
-
-func StartServing(c Clock, file string) {
+func StartServing(c api.Clock, file string) {
 	if file == "" {
 		if err := func() error {
 			// Create data dir if it doesn't exist
@@ -84,7 +70,7 @@ func StartServing(c Clock, file string) {
 			os.Exit(1)
 		}
 	}
-	s, err := NewServer(c, file)
+	s, err := api.NewServer(c, file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not start server: %v", err)
 		os.Exit(1)
@@ -93,5 +79,5 @@ func StartServing(c Clock, file string) {
 }
 
 func main() {
-	StartServing(SystemClock{}, "" /* default db file */)
+	StartServing(api.SystemClock{}, "" /* default db file */)
 }

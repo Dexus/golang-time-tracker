@@ -4,6 +4,8 @@ import (
 	"html/template"
 	"net/http"
 	"time"
+
+	"github.com/msteffen/golang-time-tracker/pkg/api"
 )
 
 type div struct {
@@ -14,17 +16,16 @@ type div struct {
 // generating the /today page
 type TodayOp struct {
 	//// Not Owned
-	// The 'server' that handles incoming requests (parent struct; owns this
-	// TodayOp)
-	server APIServer
+	// The 'server' that handles incoming requests
+	server api.APIServer
 	// The clock used by 'server' for testing
-	clock Clock
+	clock api.Clock
 	// The http response writer that must receive the result of /today
 	writer http.ResponseWriter
 
 	//// Owned
 	// the set of intervals we request from 'server' and must render
-	intervals []Interval
+	intervals []api.Interval
 	// The intervals in 'intervals' converted to an IR that is easy to render
 	divs []div
 	// The width of the result html page's background
@@ -40,7 +41,7 @@ func (t *TodayOp) start() {
 func (t *TodayOp) getIntervals() {
 	now := t.clock.Now()
 	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	result, err := t.server.GetIntervals(&GetIntervalsRequest{
+	result, err := t.server.GetIntervals(&api.GetIntervalsRequest{
 		Start: morning.Unix(),
 		End:   morning.Add(24 * time.Hour).Unix(),
 		Label: "",

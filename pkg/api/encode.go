@@ -2,7 +2,7 @@
 // way to encode sequences of strings as a single string. time-tracker happens
 // to use it to encode each tick's labels in single column in SQLite
 
-package label
+package api
 
 import (
 	"bytes"

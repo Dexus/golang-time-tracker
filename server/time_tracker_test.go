@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"github.com/msteffen/golang-time-tracker/pkg/api"
 	tu "github.com/msteffen/golang-time-tracker/pkg/testutil"
 )
 
@@ -61,11 +62,11 @@ func TestParsing(t *testing.T) {
 			tu.Eq(resp.StatusCode, http.StatusOK),
 		)
 
-		var actual GetIntervalsResponse
+		var actual api.GetIntervalsResponse
 		decoder := json.NewDecoder(buf)
 		decoder.Decode(&actual)
-		tu.Check(t, tu.Eq(actual, GetIntervalsResponse{
-			Intervals: []Interval{
+		tu.Check(t, tu.Eq(actual, api.GetIntervalsResponse{
+			Intervals: []api.Interval{
 				{
 					Start: ts.Unix(),
 					End:   ts.Add(2 * time.Minute).Unix(),
@@ -114,7 +115,7 @@ func TestGetIntervalsBoundary(t *testing.T) {
 		time.Date(2017, 7, 1, 12, 0, 0, 0, time.Local),  // overlap evening
 		time.Date(2017, 7, 2, 0, 0, 0, 0, time.Local),   // day after
 	}
-	expected := [][]Interval{
+	expected := [][]api.Interval{
 		// no overlap
 		{},
 		// end at noon (req end)
@@ -142,10 +143,10 @@ func TestGetIntervalsBoundary(t *testing.T) {
 				tu.Eq(resp.StatusCode, http.StatusOK),
 			)
 
-			var actual GetIntervalsResponse
+			var actual api.GetIntervalsResponse
 			decoder := json.NewDecoder(resp.Body)
 			decoder.Decode(&actual)
-			tu.Check(t, tu.Eq(actual, GetIntervalsResponse{Intervals: expected[i]}))
+			tu.Check(t, tu.Eq(actual, api.GetIntervalsResponse{Intervals: expected[i]}))
 		})
 	}
 }

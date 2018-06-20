@@ -1,7 +1,8 @@
 // collector.go is a library for converting ticks into intervals. Ticks are
 // "added" to a collector, and when all ticks have been processed, the collector
 // is "finished" and all contained intervals are extracted
-package main
+
+package api
 
 import (
 	"fmt"

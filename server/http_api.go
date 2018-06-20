@@ -7,12 +7,14 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+
+	"github.com/msteffen/golang-time-tracker/pkg/api"
 )
 
-var c Clock
+var c api.Clock
 
 type httpAPIServer struct {
-	APIServer
+	api.APIServer
 }
 
 func (s httpAPIServer) tick(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +25,7 @@ func (s httpAPIServer) tick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req TickRequest
+	var req api.TickRequest
 	d := json.NewDecoder(r.Body)
 	if err := d.Decode(&req); err != nil {
 		msg := fmt.Sprintf("request did not match expected type: %v", err)
@@ -67,7 +69,7 @@ func (s httpAPIServer) getIntervals(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	req := GetIntervalsRequest{
+	req := api.GetIntervalsRequest{
 		Label: r.URL.Query().Get("label"),
 		Start: start,
 		End:   end,
@@ -134,7 +136,7 @@ func (s httpAPIServer) today(w http.ResponseWriter, r *http.Request) {
 
 // ServeOverHTTP serves the Server API over HTTP, managing HTTP
 // reqests/responses
-func ServeOverHTTP(server APIServer, clock Clock) {
+func ServeOverHTTP(server api.APIServer, clock api.Clock) {
 	c = clock
 	h := httpAPIServer{
 		APIServer: server,

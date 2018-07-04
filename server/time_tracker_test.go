@@ -1,9 +1,10 @@
-package main
+package server
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -12,29 +13,31 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/msteffen/golang-time-tracker/pkg/api"
-	tu "github.com/msteffen/golang-time-tracker/pkg/testutil"
+	"github.com/msteffen/golang-time-tracker/api"
+	tu "github.com/msteffen/golang-time-tracker/testutil"
 )
+
+// testDir is initialized in TestMain--it contains db files and sockets for
+// every test
+var testDir string
 
 // TestParsing does a basic test of the TimeTracker API (registering 4 ticks
 // that create two intervals
 func TestParsing(t *testing.T) {
-	ClearData(t)
+	s := StartTestServer(t, testDir)
+	t.Log("Test server started")
 	ts := time.Date(
 		/* date */ 2017, 7, 1,
 		/* time */ 12, 0, 0,
 		/* nsec, location */ 0, time.Local)
-	testClock.Set(ts)
+	s.Set(ts)
 
 	// Make several calls to /tick via the HTTP API (simulating that they arrive
 	// several minutes apart, so that there are two distinct intervals here).
 	// Don't use TickAt, to test json parsing.
 	for _, i := range []int64{0, 1, 1, 30, 1} {
-		testClock.Add(time.Duration(i * int64(time.Minute)))
-		req, err := http.NewRequest("POST", "http://localhost:10101/tick",
-			strings.NewReader(`{"label":"label1"}`))
-		tu.Check(t, tu.Nil(err))
-		resp, err := http.DefaultClient.Do(req)
+		s.Add(time.Duration(i * int64(time.Minute)))
+		resp, err := s.PostString("/tick", `{"label":"label1"}`)
 		tu.Check(t,
 			tu.Nil(err),
 			tu.Eq(ReadBody(t, resp), ""),
@@ -47,20 +50,16 @@ func TestParsing(t *testing.T) {
 	for _, label := range []string{"label1", ""} {
 		morning := time.Date(2017, 7, 1, 0, 0, 0, 0, time.Local)
 		night := morning.Add(24 * time.Hour)
-		url := fmt.Sprintf("http://localhost:10101/intervals?label=%s&start=%d&end=%d",
-			label, morning.Unix(), night.Unix())
-		req, err := http.NewRequest("GET", url, nil)
-		tu.Check(t, tu.Nil(err))
-		resp, err := http.DefaultClient.Do(req)
-
-		buf := &bytes.Buffer{}
-		buf.ReadFrom(resp.Body)
-		t.Logf("Response body:\n%s\n", buf.String())
-
+		url := fmt.Sprintf("/intervals?label=%s&start=%d&end=%d", label, morning.Unix(), night.Unix())
+		resp, err := s.Get(url)
 		tu.Check(t,
 			tu.Nil(err),
 			tu.Eq(resp.StatusCode, http.StatusOK),
 		)
+
+		buf := &bytes.Buffer{}
+		buf.ReadFrom(resp.Body)
+		t.Logf("Response body:\n%s\n", buf.String())
 
 		var actual api.GetIntervalsResponse
 		decoder := json.NewDecoder(buf)
@@ -85,19 +84,19 @@ func TestParsing(t *testing.T) {
 // TestGetIntervalsBoundary checks that GetIntervals only returns intervals
 // within the given time range
 func TestGetIntervalsBoundary(t *testing.T) {
-	ClearData(t)
+	s := StartTestServer(t, testDir)
 	ts := time.Date(
 		/* date */ 2017, 7, 1,
 		/* time */ 6, 0, 0,
 		/* nsec, location */ 0, time.Local)
-	testClock.Set(ts)
+	s.Set(ts)
 
 	// tick every 20 minutes for 12 hours, so we have a single interval from 6am
 	// to 6pm
 	hours, ticksPerHour := 12, 3
-	TickAt(t, "", 0)
+	s.TickAt("", 0)
 	for i := 0; i < (hours * ticksPerHour); i++ {
-		TickAt(t, "", 20)
+		s.TickAt("", 20)
 	}
 
 	// Enumerate test cases
@@ -133,11 +132,8 @@ func TestGetIntervalsBoundary(t *testing.T) {
 	for i := 0; i < len(name); i++ {
 		t.Run(name[i], func(t *testing.T) {
 			reqStart, reqEnd := reqStartTs[i], reqStartTs[i].Add(24*time.Hour)
-			url := fmt.Sprintf("http://localhost:10101/intervals?start=%d&end=%d",
-				reqStart.Unix(), reqEnd.Unix())
-			req, err := http.NewRequest("GET", url, nil)
-			tu.Check(t, tu.Nil(err))
-			resp, err := http.DefaultClient.Do(req)
+			url := fmt.Sprintf("/intervals?start=%d&end=%d", reqStart.Unix(), reqEnd.Unix())
+			resp, err := s.Get(url)
 			tu.Check(t,
 				tu.Nil(err),
 				tu.Eq(resp.StatusCode, http.StatusOK),
@@ -152,17 +148,15 @@ func TestGetIntervalsBoundary(t *testing.T) {
 }
 
 func TestToday(t *testing.T) {
-	ClearData(t)
+	s := StartTestServer(t, testDir)
 	ts := time.Date(
 		/* date */ 2017, 7, 1,
 		/* time */ 9, 0, 0,
 		/* nsec, location */ 0, time.UTC)
-	testClock.Set(ts)
-	TickAt(t, "", 0, 20, 60, 20)
+	s.Set(ts)
+	s.TickAt("", 0, 20, 60, 20)
 
-	req, err := http.NewRequest("GET", "http://localhost:10101/today", nil)
-	tu.Check(t, tu.Nil(err))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.Get("/today")
 	buf := &bytes.Buffer{}
 	buf.ReadFrom(resp.Body)
 	t.Log(buf)
@@ -194,6 +188,15 @@ func TestToday(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	SetUpTestServer()
-	os.Exit(m.Run())
+	// create temporary directory for housing test data
+	var err error
+	testDir, err = ioutil.TempDir(os.TempDir(), "time-tracker-test-")
+	if err != nil {
+		panic(fmt.Sprintf("could not create temporary directory for test data: %v", err))
+	}
+	errCode := m.Run()
+	if err := os.RemoveAll(testDir); err != nil {
+		panic(fmt.Sprintf("could not remove temp testing directory: %v", err))
+	}
+	os.Exit(errCode)
 }

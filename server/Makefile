@@ -1,17 +1,5 @@
-bindata:
-	which bindata || { \
-	  go get github.com/jteeuwen/go-bindata && \
-	  cd $${GOPATH}/src/github.com/jteeuwen/go-bindata/go-bindata && \
-	  go install .; \
-	}
-
-bindata.go: bindata
-	@# If you want to change the output, just use -pkg and -o to change the package and destination file
-	go-bindata ./pkg/web/today.html.template
-
 test:
-	test -e ./bindata.go && rm ./bindata.go
-	go-bindata -debug ./today.html.template
+	cd ../webui && make DEBUG=true bindata
 	go test -v .
 
 test-interactive:

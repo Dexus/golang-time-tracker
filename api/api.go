@@ -67,9 +67,9 @@ type server struct {
 }
 
 // NewServer returns an implementation of the TrackingServer api
-func NewServer(c Clock, dbFile string) (APIServer, error) {
-	// Create DB connectin
-	db, err := sql.Open("sqlite3", dbFile)
+func NewServer(clock Clock, dbPath string) (APIServer, error) {
+	// Create DB connection
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func NewServer(c Clock, dbFile string) (APIServer, error) {
 	}
 	return &server{
 		db:    db,
-		clock: c,
+		clock: clock,
 	}, nil
 }
 

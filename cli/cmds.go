@@ -15,7 +15,7 @@ type command func([]string) error
 func UnboundedCommand(f command) func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		if err := f(args); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -47,7 +47,7 @@ func BoundedCommand(minargs, maxargs int, f command) func(*cobra.Command, []stri
 			err = f(args)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
 	}

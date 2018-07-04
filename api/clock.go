@@ -10,12 +10,14 @@ type Clock interface {
 
 // SystemClock is the default implementation of the Clock API (in which Now()
 // returns time.Now())
-type SystemClock struct{}
+type systemClock struct{}
 
 // Now is SystemClock's implementation of the Clock API (returns time.Now())
-func (s SystemClock) Now() time.Time {
+func (s systemClock) Now() time.Time {
 	return time.Now()
 }
+
+var SystemClock Clock = systemClock{} // really a const
 
 // TestingClock is an implementation of the Clock API that's useful for testing
 type TestingClock struct {
@@ -25,10 +27,6 @@ type TestingClock struct {
 // Now returns the current time according to 't'
 func (t *TestingClock) Now() time.Time {
 	return t.Time
-}
-
-var testClock = &TestingClock{
-	Time: time.Time{},
 }
 
 // Add advances 't' by the duration 'd'

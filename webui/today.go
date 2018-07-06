@@ -44,7 +44,6 @@ func (t *TodayOp) getIntervals() {
 	result, err := t.Server.GetIntervals(&api.GetIntervalsRequest{
 		Start: morning.Unix(),
 		End:   morning.Add(24 * time.Hour).Unix(),
-		Label: "",
 	})
 	if err != nil {
 		http.Error(t.Writer, err.Error(), http.StatusInternalServerError)

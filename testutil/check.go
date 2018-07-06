@@ -3,7 +3,19 @@ package testutil
 import (
 	"reflect"
 	"testing"
+
+	"github.com/msteffen/golang-time-tracker/api"
 )
+
+var intervalRespType = reflect.ValueOf(api.GetIntervalsResponse{}).Type()
+
+// Check assumptions that this library makes about the structure of
+// GetIntervalsResponse on startup
+func init() {
+	if intervalRespType.NumField() != 1 {
+		panic("GetIntervalsResponse now has more than one field; need to update Eq")
+	}
+}
 
 // Cond is a generic wrapper around a test check. Conds are generally created
 // with Eq, Nil, etc. For example:
@@ -36,8 +48,27 @@ func Nil(err error) Cond {
 // Eq confirms that 'expected' and 'actual' are equal, and calls t.Fatal()
 // otherwise
 func Eq(actual interface{}, expected interface{}) Cond {
+	ok := false
+
+	expectedVal := reflect.ValueOf(expected)
+	actualVal := reflect.ValueOf(actual)
+	switch {
+	case expectedVal.Kind() == reflect.Slice &&
+		actualVal.Kind() == reflect.Slice &&
+		expectedVal.Len() == 0 && actualVal.Len() == 0:
+		// handle nil slice vs empty slice
+		ok = true
+	case expectedVal.Type() == intervalRespType &&
+		actualVal.Type() == intervalRespType:
+		// Handle GetIntervalResponses with nil vs empty .Intervals
+		return Eq(actualVal.FieldByName("Intervals").Interface(),
+			expectedVal.FieldByName("Intervals").Interface())
+	default:
+		// Handle all other cases
+		ok = reflect.DeepEqual(expected, actual)
+	}
 	return Cond{
-		Ok:   reflect.DeepEqual(expected, actual),
+		Ok:   ok,
 		Msg:  "expected: \"%+v\"\nbut was: \"%+v\"",
 		Args: []interface{}{expected, actual},
 	}

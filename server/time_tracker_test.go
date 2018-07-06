@@ -37,7 +37,7 @@ func TestParsing(t *testing.T) {
 	// Don't use TickAt, to test json parsing.
 	for _, i := range []int64{0, 1, 1, 30, 1} {
 		s.Add(time.Duration(i * int64(time.Minute)))
-		resp, err := s.PostString("/tick", `{"label":"label1"}`)
+		resp, err := s.PostString("/tick", `{"label":"work"}`)
 		tu.Check(t,
 			tu.Nil(err),
 			tu.Eq(ReadBody(t, resp), ""),
@@ -47,38 +47,34 @@ func TestParsing(t *testing.T) {
 
 	// Make a call to /intervals and make sure the two expected intervals
 	// are returned
-	for _, label := range []string{"label1", ""} {
-		morning := time.Date(2017, 7, 1, 0, 0, 0, 0, time.Local)
-		night := morning.Add(24 * time.Hour)
-		url := fmt.Sprintf("/intervals?label=%s&start=%d&end=%d", label, morning.Unix(), night.Unix())
-		resp, err := s.Get(url)
-		tu.Check(t,
-			tu.Nil(err),
-			tu.Eq(resp.StatusCode, http.StatusOK),
-		)
+	morning := time.Date(2017, 7, 1, 0, 0, 0, 0, time.Local)
+	night := morning.Add(24 * time.Hour)
+	url := fmt.Sprintf("/intervals?start=%d&end=%d", morning.Unix(), night.Unix())
+	resp, err := s.Get(url)
+	tu.Check(t,
+		tu.Nil(err),
+		tu.Eq(resp.StatusCode, http.StatusOK),
+	)
 
-		buf := &bytes.Buffer{}
-		buf.ReadFrom(resp.Body)
-		t.Logf("Response body:\n%s\n", buf.String())
+	buf := &bytes.Buffer{}
+	buf.ReadFrom(resp.Body)
+	t.Logf("Response body:\n%s\n", buf.String())
 
-		var actual api.GetIntervalsResponse
-		decoder := json.NewDecoder(buf)
-		decoder.Decode(&actual)
-		tu.Check(t, tu.Eq(actual, api.GetIntervalsResponse{
-			Intervals: []api.Interval{
-				{
-					Start: ts.Unix(),
-					End:   ts.Add(2 * time.Minute).Unix(),
-					Label: "label1",
-				},
-				{
-					Start: ts.Add(32 * time.Minute).Unix(),
-					End:   ts.Add(33 * time.Minute).Unix(),
-					Label: "label1",
-				},
+	var actual api.GetIntervalsResponse
+	decoder := json.NewDecoder(buf)
+	decoder.Decode(&actual)
+	tu.Check(t, tu.Eq(actual, api.GetIntervalsResponse{
+		Intervals: []api.Interval{
+			{
+				Start: ts.Unix(),
+				End:   ts.Add(2 * time.Minute).Unix(),
 			},
-		}))
-	}
+			{
+				Start: ts.Add(32 * time.Minute).Unix(),
+				End:   ts.Add(33 * time.Minute).Unix(),
+			},
+		},
+	}))
 }
 
 // TestGetIntervalsBoundary checks that GetIntervals only returns intervals
@@ -94,9 +90,9 @@ func TestGetIntervalsBoundary(t *testing.T) {
 	// tick every 20 minutes for 12 hours, so we have a single interval from 6am
 	// to 6pm
 	hours, ticksPerHour := 12, 3
-	s.TickAt("", 0)
+	s.TickAt("work", 0)
 	for i := 0; i < (hours * ticksPerHour); i++ {
-		s.TickAt("", 20)
+		s.TickAt("work", 20)
 	}
 
 	// Enumerate test cases
@@ -154,7 +150,7 @@ func TestToday(t *testing.T) {
 		/* time */ 9, 0, 0,
 		/* nsec, location */ 0, time.UTC)
 	s.Set(ts)
-	s.TickAt("", 0, 20, 60, 20)
+	s.TickAt("work", 0, 20, 60, 20)
 
 	resp, err := s.Get("/today")
 	buf := &bytes.Buffer{}

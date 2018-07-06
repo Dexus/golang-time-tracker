@@ -72,7 +72,6 @@ func (s httpAPIServer) getIntervals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	req := api.GetIntervalsRequest{
-		Label: r.URL.Query().Get("label"),
 		Start: boundary[0],
 		End:   boundary[1],
 	}

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
-	"math"
 	"sync"
 	"time"
 
@@ -26,20 +25,20 @@ type GetIntervalsRequest struct {
 	// If an interval in the result overlaps with 'Start' or 'End', it will be
 	// truncated.
 	Start, End int64
-
-	// The label whose intervals we want to get. If the label is the empty string
-	// or unset, then get all intervals
-	Label string
 }
 
 // Interval represents a time interval in which the caller was working. Used in
 // GetIntervalsResponse.
 type Interval struct {
 	Start, End int64 // start and end times, as int64 seconds since epoch
-	Label      string
+
+	// The activity that was done in this interval (or "" if multiple activities
+	// may have occurred)
+	Label string
 }
 
-// GetIntervalsResponse is the result of the GetIntervals calls
+// GetIntervalsResponse contains all activity intervals, clamped to the
+// requested start/end times, sorted by start time
 type GetIntervalsResponse struct {
 	Intervals []Interval
 }
@@ -93,6 +92,13 @@ func NewServer(clock Clock, dbPath string) (APIServer, error) {
 
 // Tick handles the /tick http endpoint
 func (s *server) Tick(req *TickRequest) error {
+	// Validate req
+	if req.Label == "" {
+		return fmt.Errorf("tick request must have a label (\"\" is used to " +
+			"indicate intervals formed by the union of all ticks in GetIntervals")
+	}
+
+	// Write tick to DB
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(fmt.Sprintf(
@@ -112,16 +118,9 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		// interval overlaps with the request interval
 		start := req.Start - maxEventGap
 		end := req.End + maxEventGap
-		if req.Label == "" {
-			rows, err = s.db.Query(fmt.Sprintf(
-				"SELECT * FROM ticks WHERE time BETWEEN %d AND %d", start, end,
-			))
-		} else {
-			rows, err = s.db.Query(fmt.Sprintf(
-				"SELECT * FROM ticks WHERE time BETWEEN %d AND %d AND labels LIKE \"%%%s%%\"",
-				start, end, EscapeLabel(req.Label),
-			))
-		}
+		rows, err = s.db.Query(fmt.Sprintf(
+			"SELECT * FROM ticks WHERE time BETWEEN %d AND %d", start, end,
+		))
 	}()
 	if err != nil {
 		return nil, err
@@ -129,6 +128,14 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 
 	// Iterate through 'times' and break it up into intervals
 	collector := make(map[string]*Collector) // map label to collector
+	collector[""] = &Collector{
+		l: req.Start,
+		r: req.End,
+	}
+	var (
+		prevLabel string // label that no tick will have initially
+		prevT     int64  // prev tick's time (unix seconds)
+	)
 	for rows.Next() {
 		// parse SQL record
 		var escapedLabel string
@@ -136,9 +143,8 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		rows.Scan(&t, &escapedLabel)
 		glog.Infof("%s, %s\n", time.Unix(t, 0), escapedLabel)
 		label := UnescapeLabel(escapedLabel)
-		if req.Label != "" && req.Label != label {
-			continue
-		}
+
+		// Add timestamp to collectors
 		if collector[label] == nil {
 			collector[label] = &Collector{
 				l:     req.Start,
@@ -146,54 +152,21 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 				label: label,
 			}
 		}
+		// this activity's interval starts at the end of the previous activity's
+		// interval (if there is one)
+		if prevLabel != label {
+			if prevT > 0 {
+				collector[label].Add(t)
+			}
+			prevLabel = label
+			prevT = t
+		}
 		collector[label].Add(t)
+		collector[""].Add(t)
 	}
 
-	// finish collectors
-	collections := make([][]Interval, 0, len(collector)) // each label's intervals
-	sz := 0
-	for _, c := range collector {
-		collections = append(collections, c.Finish())
-		sz += len(collections[len(collections)-1])
-	}
-
-	// merge intervals into sorted list
-	intervals := make([]Interval, 0, sz) // final list of intervals to return
-	for {
-		// remove empty collections (copy from -> to, where 'from' skips empties)
-		to := 0
-		for from := 0; from < len(collections); from++ {
-			if len(collections[from]) == 0 { // from is empty -- skip
-				continue
-			}
-			collections[to] = collections[from]
-			to++
-		}
-		collections = collections[:to]
-		if len(collections) == 0 {
-			break // all empty
-		}
-
-		// scan through first element of all non-empty collections and find the min
-		tmin := int64(math.MaxInt64) // math.MaxInt64 is const, not an int64, sadly
-		imin := len(collections)
-		for i := len(collections) - 1; i >= 0; i-- {
-			// not all collections are empty => not done
-			if collections[i][0].Start < tmin {
-				tmin = collections[i][0].Start
-				imin = i
-			}
-		}
-		// add min interval to 'intervals'
-		intervals = append(intervals, collections[imin][0])
-		if len(collections[imin]) > 1 {
-			collections[imin] = collections[imin][1:]
-		} else {
-			collections[imin] = nil
-		}
-	}
-
-	return &GetIntervalsResponse{Intervals: intervals}, nil
+	// TODO include labelled intervals in response
+	return &GetIntervalsResponse{Intervals: collector[""].Finish()}, nil
 }
 
 func (s *server) Clear() error {

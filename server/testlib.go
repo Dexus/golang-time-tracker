@@ -70,21 +70,19 @@ func StartTestServer(t *testing.T, tmpDir string) TestServer {
 // TickAt is a helper function that sends ticks to the local TimeTracker server
 // at the given intervals with the given labels
 //
-// (TickAt(["l1"], 1, 1, 1) would send a tick with the label "l1" at 1 minute
-// past start, 2 minutes past start, and 3 minutes past start, logically)
+// (TickAt("l1", 1, 1, 1) would send a tick with the label "l1" at 1 minute past
+// start, 2 minutes past start, and 3 minutes past start, logically)
 func (s TestServer) TickAt(label string, intervals ...int64) {
 	s.T.Helper()
-	request := api.TickRequest{Label: label}
-	var buf bytes.Buffer
+	buf := &bytes.Buffer{}
+	json.NewEncoder(buf).Encode(api.TickRequest{Label: label})
 	for _, i := range intervals {
 		s.TestingClock.Add(time.Duration(i * int64(time.Minute)))
-		buf.Reset()
-		json.NewEncoder(&buf).Encode(request)
-		resp, err := s.Client.Post("/tick", &buf)
+		resp, err := s.Client.Post("/tick", bytes.NewReader(buf.Bytes()))
 		tu.Check(s.T,
 			tu.Nil(err),
-			tu.Eq(resp.StatusCode, http.StatusOK),
 			tu.Eq(ReadBody(s.T, resp), ""),
+			tu.Eq(resp.StatusCode, http.StatusOK),
 		)
 	}
 }

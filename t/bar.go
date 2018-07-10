@@ -165,7 +165,7 @@ func newBarOp() *barOp {
 func (b *barOp) writeInverted(r rune) {
 	if b.empty || !b.inverted {
 		// SGR code -- 7 = inverted, 33 = set fg to yellow
-		b.buf.Write([]byte{033, '[', '7', ';', '3', '3', 'm'})
+		b.buf.Write([]byte{0x1b, '[', '7', ';', '3', '3', 'm'})
 		b.empty = false
 		b.inverted = true
 	}
@@ -177,11 +177,11 @@ func (b *barOp) writeInverted(r rune) {
 func (b *barOp) writeNormal(r rune) {
 	if b.empty {
 		// set fg to yellow (colors are already normal)
-		b.buf.Write([]byte{033, '[', '3', '3', 'm'})
+		b.buf.Write([]byte{0x1b, '[', '3', '3', 'm'})
 		b.empty = false
 	} else if b.inverted {
 		// SGR code -- 0 = normal, 33 = set fg to yellow
-		b.buf.Write([]byte{033, '[', '0', ';', '3', '3', 'm'})
+		b.buf.Write([]byte{0x1b, '[', '0', ';', '3', '3', 'm'})
 		b.inverted = false
 	}
 	b.buf.WriteRune(r)
@@ -191,7 +191,7 @@ func (b *barOp) writeNormal(r rune) {
 // string
 func (b *barOp) finish() string {
 	// reset colors completely and close with ']'
-	b.buf.Write([]byte{033, '[', 'm', ']'})
+	b.buf.Write([]byte{0x1b, '[', 'm', ']'})
 	return b.buf.String()
 }
 

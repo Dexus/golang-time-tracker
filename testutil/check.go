@@ -15,8 +15,12 @@ var intervalRespType = reflect.ValueOf(api.GetIntervalsResponse{}).Type()
 // Check assumptions that this library makes about the structure of
 // GetIntervalsResponse on startup
 func init() {
-	if intervalRespType.NumField() != 1 {
-		panic("GetIntervalsResponse now has more than one field; need to update Eq")
+	if intervalRespType.NumField() != 2 {
+		panic("GetIntervalsResponse now has more than two fields; need to update Eq")
+	}
+	if intervalRespType.Field(0).Name != "Intervals" ||
+		intervalRespType.Field(1).Name != "EndGap" {
+		panic("GetIntervalsResponse's fields have changed; need to update Eq")
 	}
 }
 
@@ -108,9 +112,15 @@ func Eq(actual interface{}, expected interface{}) Cond {
 		ok = true
 	case expectedVal.Type() == intervalRespType &&
 		actualVal.Type() == intervalRespType:
-		// Handle GetIntervalResponses with nil vs empty .Intervals
-		return Eq(actualVal.FieldByName("Intervals").Interface(),
-			expectedVal.FieldByName("Intervals").Interface())
+		// Handle GetIntervalResponses with nil vs empty .Intervals. Currently this
+		// explicitly compares .Intervals and .EndGap. If new fields are added they
+		// need to be compared here
+		if actualVal.FieldByName("EndGap").Int() != expectedVal.FieldByName("EndGap").Int() {
+			ok = false // EndGap values not equal, return cond at bottom
+		} else {
+			return Eq(actualVal.FieldByName("Intervals").Interface(),
+				expectedVal.FieldByName("Intervals").Interface())
+		}
 	default:
 		// Handle all other cases
 		ok = reflect.DeepEqual(expected, actual)

@@ -41,6 +41,7 @@ type Interval struct {
 // requested start/end times, sorted by start time
 type GetIntervalsResponse struct {
 	Intervals []Interval
+	EndGap    int64
 }
 
 // APIServer is the interface exported by the TrackingServer API
@@ -144,7 +145,7 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 		glog.Infof("%s, %s\n", time.Unix(t, 0), escapedLabel)
 		label := UnescapeLabel(escapedLabel)
 
-		// Add timestamp to collectors
+		// initialize collector for current activity
 		if collector[label] == nil {
 			collector[label] = &Collector{
 				l:     req.Start,
@@ -152,21 +153,37 @@ func (s *server) GetIntervals(req *GetIntervalsRequest) (*GetIntervalsResponse, 
 				label: label,
 			}
 		}
-		// this activity's interval starts at the end of the previous activity's
-		// interval (if there is one)
+
 		if prevLabel != label {
+			// New activity was started--this activity's interval starts at the end
+			// of the previous activity's interval (if there is one)
 			if prevT > 0 {
 				collector[label].Add(t)
 			}
 			prevLabel = label
-			prevT = t
 		}
+
+		// Add timestamp to collectors
+		prevT = t
 		collector[label].Add(t)
 		collector[""].Add(t)
 	}
 
+	// If we could extend the leftmost interval, proactively extend it and
+	// indicate how much time has elapsed since the past tick to the caller
+	now := s.clock.Now().Unix()
+	endGap := int64(0)
+	if (now - prevT) < maxEventGap {
+		collector[prevLabel].Add(now)
+		collector[""].Add(now)
+		endGap = now - prevT
+	}
+
 	// TODO include labelled intervals in response
-	return &GetIntervalsResponse{Intervals: collector[""].Finish()}, nil
+	return &GetIntervalsResponse{
+		Intervals: collector[""].Finish(),
+		EndGap:    endGap,
+	}, nil
 }
 
 func (s *server) Clear() error {

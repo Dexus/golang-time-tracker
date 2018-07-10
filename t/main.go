@@ -24,20 +24,31 @@ var (
 
 func Today() error {
 	now := time.Now()
+	morning, night := time.Time{}, time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+
 	// Make sure to set local time (silly--see https://github.com/msteffen/golang-time-tracker/issues/2)
-	morning := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	night := morning.Add(24 * time.Hour)
-	c := cu.GetClient(socketFile)
-	httpResp, err := c.Get(fmt.Sprintf("/intervals?start=%d&end=%d", morning.Unix(), night.Unix()))
-	if err != nil {
-		return fmt.Errorf("could not retrieve today's intervals: %v", err)
+	for day := 0; day < 7; day++ {
+		morning = night
+		night = morning.Add(24 * time.Hour)
+		c := cu.GetClient(socketFile)
+		httpResp, err := c.Get(fmt.Sprintf("/intervals?start=%d&end=%d", morning.Unix(), night.Unix()))
+		if err != nil {
+			return fmt.Errorf("could not retrieve today's intervals: %v", err)
+		}
+		var resp api.GetIntervalsResponse
+		if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+			return fmt.Errorf("could not decode response: %v", err)
+		}
+		workDuration := time.Duration(0)
+		for _, i := range resp.Intervals {
+			workDuration += time.Duration(i.End-i.Start) * time.Second
+		}
+		// block chars = u2588 (full) - u258f (left eighth)
+		fmt.Printf("%s: %s \x1b[1;33m%s\x1b[m\n",
+			morning.Format("2006/02/01 "),
+			Bar(morning, resp.Intervals),
+			workDuration.String())
 	}
-	var resp api.GetIntervalsResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
-		return fmt.Errorf("could not decode response: %v", err)
-	}
-	// block chars = u2588 (full) - u258f (left eighth)
-	fmt.Printf("%s: %s", morning.Format("2006/02/01 "), Bar(morning, resp.Intervals))
 	return nil
 }
 
@@ -74,7 +85,7 @@ func serveCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the time-tracker server",
 		Long:  "Start the time-tracker server",
-		Run: BoundedCommand(1, 1, func(args []string) error {
+		Run: BoundedCommand(0, 0, func(_ []string) error {
 			flag.Parse() // parse glog flags
 
 			// Set up standard serving dir
@@ -121,7 +132,7 @@ func main() {
 		Long: "Client-side CLI for a time-tracking/time-gamifying tool that helps " +
 			"distractable people use their time more mindfully",
 		Run: BoundedCommand(0, 0, func(_ []string) error {
-			// Today()
+			Today()
 			return nil
 		}),
 	}

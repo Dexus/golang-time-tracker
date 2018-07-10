@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -34,7 +36,9 @@ func Today() error {
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
 		return fmt.Errorf("could not decode response: %v", err)
 	}
-	fmt.Printf("%s: ", now.Format("2006/02/01"))
+	// block chars = u2588 (full) - u258f (left eighth)
+	fmt.Printf("%s: %s", morning.Format("2006/02/01 "), Bar(morning, resp.Intervals))
+	return nil
 }
 
 // func watchCmd() *cobra.Command {
@@ -121,7 +125,7 @@ func main() {
 			return nil
 		}),
 	}
-	rootCmd.AddCommand(watchCmd())
+	// rootCmd.AddCommand(watchCmd())
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(statusCmd())
 	rootCmd.AddCommand(tickCmd())

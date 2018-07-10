@@ -1,7 +1,10 @@
 package testutil
 
 import (
+	"bytes"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/msteffen/golang-time-tracker/api"
@@ -30,18 +33,63 @@ type Cond struct {
 
 	// Msg is a formatting message to display if the condition is violated
 	Msg string
-
-	// Args are any arguments to be placed into the format string if the condition
-	// is violated
-	Args []interface{}
 }
 
 // Nil confirms that 'err' is nil, and calls t.Fatal() otherwise
 func Nil(err error) Cond {
 	return Cond{
 		Ok: err == nil,
-		Msg: "expected <nil> error, but was:\n	%v",
-		Args: []interface{}{err},
+		Msg: fmt.Sprintf("expected <nil> error, but was:\n	%v", err),
+	}
+}
+
+// HasPrefix confirms that 'text' has the prefix 'prefix', and calls t.Fatal()
+// otherwise
+func HasPrefix(text interface{}, prefix interface{}) Cond {
+	cStr, cOK := text.(string)
+	pStr, pOK := prefix.(string)
+	if cOK && pOK {
+		return Cond{
+			Ok:  strings.HasPrefix(cStr, pStr),
+			Msg: fmt.Sprintf("expected: %q\n to be prefix of: %q\nbut it was not", pStr, cStr),
+		}
+	}
+	cBytes, cOK := text.([]byte)
+	pBytes, pOK := prefix.([]byte)
+	if cOK && pOK {
+		return Cond{
+			Ok:  bytes.HasPrefix(cBytes, pBytes),
+			Msg: fmt.Sprintf("expected: %q\n to be prefix of: %q\nbut it was not", pBytes, cBytes),
+		}
+	}
+	return Cond{
+		Ok:  false,
+		Msg: fmt.Sprintf("expected (string, string) or ([]byte, []byte) but got (%T, %T)", text, prefix),
+	}
+}
+
+// HasSuffix confirms that 'text' has the suffix 'suffix', and calls t.Fatal()
+// otherwise
+func HasSuffix(text interface{}, suffix interface{}) Cond {
+	cStr, cOK := text.(string)
+	pStr, pOK := suffix.(string)
+	if cOK && pOK {
+		return Cond{
+			Ok:  strings.HasSuffix(cStr, pStr),
+			Msg: fmt.Sprintf("expected: %q\n to be suffix of: %q\nbut it was not", pStr, cStr),
+		}
+	}
+	cBytes, cOK := text.([]byte)
+	pBytes, pOK := suffix.([]byte)
+	if cOK && pOK {
+		return Cond{
+			Ok:  bytes.HasSuffix(cBytes, pBytes),
+			Msg: fmt.Sprintf("expected: %q\n to be suffix of: %q\nbut it was not", pBytes, cBytes),
+		}
+	}
+	return Cond{
+		Ok:  false,
+		Msg: fmt.Sprintf("expected (string, string) or ([]byte, []byte) but got (%T, %T)", text, suffix),
 	}
 }
 
@@ -67,10 +115,16 @@ func Eq(actual interface{}, expected interface{}) Cond {
 		// Handle all other cases
 		ok = reflect.DeepEqual(expected, actual)
 	}
+	// Quote strings for easier debugging
+	if e, ok := expected.(string); ok {
+		expected = interface{}(fmt.Sprintf("%q", e)[1 : len(e)+1])
+	}
+	if a, ok := actual.(string); ok {
+		actual = interface{}(fmt.Sprintf("%q", actual)[1 : len(a)+1])
+	}
 	return Cond{
-		Ok:   ok,
-		Msg:  "expected: \"%+v\"\nbut was: \"%+v\"",
-		Args: []interface{}{expected, actual},
+		Ok:  ok,
+		Msg: fmt.Sprintf("expected: \"%+v\"\n         but was: \"%+v\"", expected, actual),
 	}
 }
 
@@ -79,7 +133,7 @@ func Check(t *testing.T, conds ...Cond) {
 	t.Helper()
 	for _, cond := range conds {
 		if !cond.Ok {
-			t.Fatalf(cond.Msg, cond.Args...)
+			t.Fatal(cond.Msg)
 		}
 	}
 

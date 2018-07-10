@@ -17,6 +17,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"time"
 
 	"github.com/msteffen/golang-time-tracker/api"
@@ -107,12 +108,10 @@ var blockMask = [...]byte{
 
 // bits counts the number of ones in 'c'
 func bits(c byte) byte {
-	l, r := (c&0xaa)>>1, c&0x55
-	c = (l ^ r) | ((r & l) << 1)
-	l, r = (c&0xcc)>>2, c&0x33
-	c = (l ^ r) | ((l & r) << 1)
-	l, r = (c&0xf0)>>4, c&0x0f
-	c = (l ^ r) | ((l & r) << 1)
+	for i, m := range []byte{0x55, 0x33, 0x0f} {
+		var p byte = 1 << byte(i)
+		c = ((c >> p) & m) + (c & m)
+	}
 	return c
 }
 
@@ -158,6 +157,7 @@ func newBarOp() *barOp {
 		empty: true,
 	}
 	op.buf.WriteByte('[')
+	return op
 }
 
 // writeInverted is a helper function that writes 'r' to b.buf with inverted
@@ -195,56 +195,40 @@ func (b *barOp) finish() string {
 	return b.buf.String()
 }
 
-// left prints the case where a character and interval overlap like [####    ]:
-// il ≤ cl < ir < cr
-func (b *barOp) left(eighths rune) {
-	if eighths == 0 {
+func (b *barOp) put(idx int) {
+	i := rune(idx)
+	switch {
+	case i == 0:
+		// 0 - off
 		b.writeInverted(fullBlock)
-	} else {
-		b.writeNormal(fullBlock + 8 - e)
-	}
-}
-
-// right prints the case where a character and interval overlap like [    ####]:
-// il < cl < ir ≤ cr
-func (b *barOp) right(eighths rune) {
-	if eighths == 8 {
+	case i == 1:
+		// 1 - full
 		b.writeNormal(fullBlock)
-	} else if eighths == 0 {
-		b.writeInverted(fullBlock)
-	} else {
-		b.writeInverted(fullBlock + e)
-	}
-}
-
-// middle prints the case where a character and interval overlap like [  ####  ]:
-// il < cl < cr < ir
-func (b *barOp) middle(eighths rune) {
-	if eighths < 3 {
+	case i <= 8:
+		// [2-8] left boxes:
+		b.writeNormal(fullBlock + i - 1)
+	case i <= 15:
+		// [9-15] right boxes
+		b.writeInverted(fullBlock + 16 - i)
+	case i <= 26:
+		// [16-26] thin vertical line
 		b.writeNormal(lightVerticalLine)
-	} else if eighths < 7 {
-		b.writeNormal(thickVerticalLine)
-	} else {
-		b.writeNormal(fullBlock)
-	}
-}
-
-// sides prints the case where a character and interval overlap like [##    ##]:
-// cl < ir < (i+1)l < cr
-func (b *barOp) sides(eighths rune) {
-	if eighths >= 5 {
+	case i <= 37:
+		// [27-37] inverted thin vertical line
 		b.writeInverted(lightVerticalLine)
-	} else if eighths >= 1 {
+	case i <= 47:
+		// [38-47] thick vertical line
+		b.writeNormal(thickVerticalLine)
+	case i <= 57:
+		// [48-57] inverted thick vertical line
 		b.writeInverted(thickVerticalLine)
-	} else {
-		b.writeInverted(fullBlock)
 	}
 }
 
 var emptyBar = func() string {
 	op := newBarOp()
 	for i := 0; i < 60; i++ {
-		b.writeInverted(fullBlock)
+		op.writeInverted(fullBlock)
 	}
 	return op.finish()
 }()
@@ -258,25 +242,26 @@ func Bar(morning time.Time, intervals []api.Interval) (res string) {
 	// - A bar/line represents one day
 	// - each bar/line is 60 chars => each char is 24 minutes (60*24 mins per day)
 	// - each char is 8 bits. Because bars are rendered from left to right, bits
-	//   are reversed within their byte:
+	//   are reversed within their byte (high bit = earlier):
 	//         0            0            0            1             1       ...
 	//   [0:00, 0:03) [0:03, 0:06) [0:06, 0:09) [0:09, 0:12), [0:12, 0:15), ....
 	var (
 		op = newBarOp()
 
-		// cur interval (24 minutes) and end of bar/line
-		cur   = morning
-		night = morning.Add(24 * time.Hour)
+		// left and right boundary of current window (3 minutes/one bit, in loop)
+		cl, cr = time.Time{}, morning
 
 		// Current interval index, and left/right boundaries
 		n      = 0
-		il, ir time.Time
+		il, ir = time.Unix(intervals[0].Start, 0), time.Unix(intervals[0].End, 0)
 
 		// The current "character" (24-minute window)
 		window byte
 	)
+	fmt.Printf("I: [%d,%d]\n", int(il.Sub(morning).Minutes()), int(ir.Sub(morning).Minutes()))
 	for i := 0; i < (60 * 8); i++ {
-		cl, cr := cur, cur.Add(i*3*time.Minute).Add(-1*time.Nanosecond)
+		cl = cr
+		cr = cl.Add(3 * time.Minute)
 
 		// Determine amount of interval in [cl, cr]
 		var duration time.Duration
@@ -291,27 +276,59 @@ func Bar(morning time.Time, intervals []api.Interval) (res string) {
 				// il <= cr and cl <= ir, there is overlap
 				duration += MinT(cr, ir).Sub(MaxT(cl, il))
 			}
+			if Leq(cr, ir) {
+				break // intervals[n] overlaps next bit as well
+			}
+
 			n++
 			if n < len(intervals) {
 				il, ir = time.Unix(intervals[n].Start, 0), time.Unix(intervals[n].End, 0)
 			}
+			fmt.Printf("I: [%d,%d]\n", int(il.Sub(morning).Minutes()), int(ir.Sub(morning).Minutes()))
 		}
 		if duration > 90*time.Second {
-			window &= (1 << (7 - (i % 8)))
+			// fmt.Printf("window (%s) |= (1 << (7-(%d%%8))\n", bin(window), i)
+			// fmt.Printf("%d%%8 = %d, 7-(%d%%8) = %d\n1 << (7-(%d%%8)) = %s\n", i, i%8, i, 7-(i%8), i, bin(byte(byte(1)<<byte(7-(i%8)))))
+			window |= (1 << byte(7-(i%8)))
+			// fmt.Printf("window is now %s\n", bin(window))
 		}
 
 		if i%8 == 7 {
 			// Window is filled out -- append to bar
-			best := 0
-			bestCount := 0
-			for j, b := range blockMask {
-				if bits(b&window) > bestCount {
-					best = j
-					bestCount = bits(b & window)
+			// fmt.Printf("window: %s\n", bin(window))
+			if window == 0 || window == 0xff {
+				op.put(int(window >> 7)) // hack -- works for put(0) and put(1)
+			} else {
+				best := -1
+				bestCount := byte(8)
+				for j, b := range blockMask {
+					diff := bits(b ^ window)
+					if diff < bestCount {
+						// fmt.Printf("bits(%s ^ %s = %s) = %d\n", bin(b), bin(window), bin(b^window), bits(b^window))
+						best = j
+						bestCount = diff
+					}
+					if diff == 0 {
+						break
+					}
 				}
+				op.put(best)
 			}
-			op.Put(best)
+			window = 0
 		}
 	}
-	return "" // overwritten by defer
+	return op.finish()
+}
+
+func bin(x byte) string {
+	var result [8]byte
+	for i := 0; i < 8; i++ {
+		if x%2 == 1 {
+			result[7-i] = '1'
+		} else {
+			result[7-i] = '0'
+		}
+		x >>= 1
+	}
+	return string(result[:])
 }

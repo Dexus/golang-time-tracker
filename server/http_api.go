@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -157,24 +158,38 @@ func (h loggingHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // serveOverHTTP serves the Server API over HTTP, managing HTTP
 // reqests/responses
 func ServeOverHTTP(socketPath string, clock api.Clock, server api.APIServer) error {
-	// Stat socket file
-	info, err := os.Stat(socketPath)
-	glog.Infof("socket stat (socket should not exist):\ninfo = %#v\nerr = %v\n", info, err)
+	for t := 0; t < 2; t++ {
+		// Stat socket file
+		info, err := os.Stat(socketPath)
+		glog.Infof("socket stat (socket should not exist):\ninfo = %#v\nerr = %v\n", info, err)
+		if err != nil {
+			break // socket doesn't exist -- success
+		}
 
-	// Socket exists: return error indicating that server can't start
-	if err == nil {
-		// Socket exists, but is unexpected file type. Don't remove it in case it
+		if t == 1 {
+			// Second try -- if the socket is still present just give up
+			return fmt.Errorf("time-tracker is already running with a socket at %q but not responding. Try: 'lsof %s'", socketPath, err, socketPath)
+		}
+
+		// Check if socket is unexpected file type. Don't remove it in case it
 		// belongs to another application somehow
 		if info.Mode()&os.ModeType != os.ModeSocket {
-			glog.Fatalf("socket file had unexpected file type: %s (maybe it's owned by another application?)", info.Mode())
+			return fmt.Errorf("socket file had unexpected file type: %s (maybe it's owned by another application?)", info.Mode())
 		}
 
-		// Socket exists; see if server is running by sending request
+		// See if server is running by sending request
 		_, err = cu.GetClient(socketPath).Get("/status")
 		if err == nil {
-			glog.Fatal("time-tracker is already running")
+			return errors.New("time-tracker is already running")
 		}
-		glog.Fatalf("time-tracker is already running, but not responding. Try: 'lsof %s'", socketPath)
+
+		// Socket is non-responsive, try to delete it
+		glog.Warning("socket file exists but isn't responding to commands. Attempting to remove it...")
+		if err := os.Remove(socketPath); err != nil {
+			return fmt.Errorf("time-tracker is already running with a socket at %q but not responding and the socket cannot be removed (%v). Try: 'lsof %s'", socketPath, err, socketPath)
+		}
+
+		break // socket successfully removed
 	}
 
 	h := httpAPIServer{
